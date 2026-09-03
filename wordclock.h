@@ -31,8 +31,9 @@
 #define ADR_CLOCK_LAYOUT  (ADR_CLOCK_HEIGHT + sizeof(uint8_t))          // 20 * 20 char
 #define ADR_NM_BRIGHTNESS (ADR_CLOCK_LAYOUT + (sizeof(char) * 20 * 20)) // uint8_t
 #define ADR_TIMEZONE      (ADR_NM_BRIGHTNESS + sizeof(uint8_t))         // char[50]
+#define ADR_KLOKUNIEK     (ADR_TIMEZONE + (sizeof(char) * 50))          // bool
 
-#define EEPROM_SIZE       (ADR_TIMEZONE + (sizeof(char) * 50))
+#define EEPROM_SIZE       (ADR_KLOKUNIEK + sizeof(bool))
 
 // ----------------------------------------------------------------------------------
 //                              FUNCTIONS & VARS
@@ -55,6 +56,7 @@ inline uint8_t clockWidth;
 inline uint8_t clockHeight;
 inline String clockLayout;
 inline char timezone_string[50];
+inline bool klokUniek;
 
 void print(String message, bool newline = true);
 void print(int number, bool newline = true);

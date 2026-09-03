@@ -112,7 +112,7 @@
     <section class="section pt-2">
       <div class="container">
         <div class="is-flex is-justify-content-space-between is-align-items-center">
-          <img src="/img/logo.png" width="250" />
+          <img :src="klokuniek ? '/img/klokuniek.webp' : '/img/logo.png'" width="250" />
           <a @click="showSettings = !showSettings"><img src="/img/settings.svg" style="height:30px" /></a>
         </div>
         <form @submit.prevent="saveSettings" class="settings" :class="{'show': showSettings, 'overflow-visible': showTimezoneDropdown}">
@@ -240,6 +240,7 @@
         const clockLayout = ref();
         const version = ref();
         const fsversion = ref();
+        const klokuniek = ref(false);
         const timezone = ref('CET-1CEST,M3.5.0,M10.5.0/3_2');
         const showTimezoneDropdown = ref(false);
         const timezoneSearch = ref('');
@@ -808,6 +809,8 @@
             nm_start.value = result.nm_start_h.toString().padStart(2, '0') + ":" + result.nm_start_m.toString().padStart(2, '0');
             nm_end.value = result.nm_end_h.toString().padStart(2, '0') + ":" + result.nm_end_m.toString().padStart(2, '0');
             timezone.value = result.timezone;
+            klokuniek.value = !!result.klokuniek;
+            if (klokuniek.value) document.title = "KlokUniek";
           } catch (e) {
             alert('Could not retrieve settings');
             console.error(e);
@@ -936,6 +939,7 @@
         return {
           colorType,
           showSettings,
+          klokuniek,
           nm,
           nm_start,
           nm_end,
