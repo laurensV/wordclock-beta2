@@ -261,6 +261,8 @@ void setupPersistentVars() {
     EEPROM.put(ADR_TIMEZONE, timezone_string);
     EEPROM.commit(); // Commit immediately after setting a default
   }
+
+  klokUniek = EEPROM.read(ADR_KLOKUNIEK) == 1; // treat uninitialized (0xFF) as false
 }
 
 void setNightMode(int timeInMinutes) {
@@ -328,8 +330,8 @@ void setupWifiManager() {
   // print("resetting WiFi settings");
   // wifiManager.resetSettings();
   wifiManager.setConfigPortalBlocking(false);
-  wifiManager.setHostname(HOSTNAME);
-  if (wifiManager.autoConnect(AP_SSID)) {
+  wifiManager.setHostname(klokUniek ? "klokuniek" : HOSTNAME);
+  if (wifiManager.autoConnect(klokUniek ? "KlokUniek" : AP_SSID)) {
     print("Reconnected to WiFi");
     onWifiConnect();
   }
@@ -394,7 +396,7 @@ void onWifiConnect() {
  *                    Over-the-Air Updates
  ***************************************************************/
 void setupOTA() {
-  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.setHostname(klokUniek ? "klokuniek" : HOSTNAME);
   ArduinoOTA.begin();
   FOTA = new esp8266FOTA("wordclock", VERSION, fileSystemVersion);
   FOTA->checkURL = "https://raw.githubusercontent.com/laurensV/wordclock-beta/main/firmware/version.json";
@@ -667,7 +669,7 @@ void resetSettings() {
 }
 
 bool getSettings() {
-  server.send(200, "application/json", "{\"version\": " + String(VERSION) + ", \"fsversion\": " + String(fileSystemVersion) + ", \"mode\": " + String(mode) + ",\"brightness\": " + String(brightness) + ",\"nm_brightness\": " + String(nightModeBrightness) + ", \"nm\": " + String(checkNightMode) + ", \"nm_start_h\": " + String(nightModeStartHour) + ", \"nm_start_m\": " + String(nightModeStartMin) + ", \"nm_end_h\": " + String(nightModeEndHour) + ", \"nm_end_m\": " + String(nightModeEndMin) + ", \"clock_width\": " + String(clockWidth) + ", \"clock_height\": " + String(clockHeight) + ", \"clock_layout\": \"" + clockLayout + "\", \"timezone\": \"" + String(timezone_string) + "\"}");
+  server.send(200, "application/json", "{\"version\": " + String(VERSION) + ", \"fsversion\": " + String(fileSystemVersion) + ", \"mode\": " + String(mode) + ",\"brightness\": " + String(brightness) + ",\"nm_brightness\": " + String(nightModeBrightness) + ", \"nm\": " + String(checkNightMode) + ", \"nm_start_h\": " + String(nightModeStartHour) + ", \"nm_start_m\": " + String(nightModeStartMin) + ", \"nm_end_h\": " + String(nightModeEndHour) + ", \"nm_end_m\": " + String(nightModeEndMin) + ", \"clock_width\": " + String(clockWidth) + ", \"clock_height\": " + String(clockHeight) + ", \"clock_layout\": \"" + clockLayout + "\", \"timezone\": \"" + String(timezone_string) + "\", \"klokuniek\": " + String(klokUniek) + "}");
   return true;
 }
 
@@ -821,6 +823,13 @@ bool saveAdminSettings() {
     }
     EEPROM.commit();
     setupPixels(false);
+  }
+
+  if (JSONDocument.containsKey("klokuniek")) {
+    klokUniek = JSONDocument["klokuniek"];
+    print("setting klokuniek to ", false);print(klokUniek);
+    EEPROM.put(ADR_KLOKUNIEK, klokUniek);
+    EEPROM.commit();
   }
 
   server.send(200, "application/json", server.arg("plain"));

@@ -20,7 +20,7 @@
     <section class="section pt-2">
       <div class="container">
         <div class="is-flex is-justify-content-space-between is-align-items-center">
-          <img src="/img/logo.png" width="250" />
+          <img :src="klokuniek ? '/img/klokuniek.webp' : '/img/logo.png'" width="250" />
           <div>Admin</div>
         </div>
         <form @submit.prevent="saveAdminSettings">
@@ -36,6 +36,10 @@
             <div class="pb-1 pr-1" v-if="clockWidth && clockHeight" v-for="index in (clockWidth*clockHeight)" :key="index" :style="{'width': `calc(100% / ${clockWidth})`}">
               <input class="has-text-weight-bold" ref="letters" @input="moveToNextField($event.target.value, index-1)" maxlength="1" required :autofocus="index === 1" style="text-align:center; width: 20px; height: 20px; max-width: 20px; max-height: 20px;"  type="text" v-model="clockLayout[index - 1]"  />
             </div>
+          </div>
+          <div class="is-flex is-justify-content-space-between is-align-items-center py-2">
+            <label for="klokuniek" class="is-flex-grow-1">KlokUniek branding:</label>
+            <input class="checkbox" type="checkbox" id="klokuniek" name="klokuniek" v-model="klokuniek">
           </div>
           <div>
             Firmware Version: v{{version}}<br>
@@ -71,6 +75,7 @@
         const clockWidth = ref();
         const clockHeight = ref();
         const clockLayout = ref([]);
+        const klokuniek = ref(false);
         const version = ref();
         const fsversion = ref();
         const letters = ref([])
@@ -84,6 +89,8 @@
             if (clockWidth.value === 1) clockWidth.value = 13;
             if (clockHeight.value === 1) clockHeight.value = 13;
             clockLayout.value = result.clock_layout.split("");
+            klokuniek.value = !!result.klokuniek;
+            if (klokuniek.value) document.title = "KlokUniek";
             version.value = result.version;
             fsversion.value = result.fsversion;
             await nextTick();
@@ -117,7 +124,8 @@
               body: JSON.stringify({
                 clock_width: parseInt(clockWidth.value),
                 clock_height: parseInt(clockHeight.value),
-                clock_layout: clockLayout.value.slice(0, clockWidth.value*clockHeight.value).join("")
+                clock_layout: clockLayout.value.slice(0, clockWidth.value*clockHeight.value).join(""),
+                klokuniek: klokuniek.value
               })
             });
             const result = await response.json();
@@ -166,6 +174,7 @@
           clockWidth,
           clockHeight,
           clockLayout,
+          klokuniek,
           version,
           fsversion,
           moveToNextField,
