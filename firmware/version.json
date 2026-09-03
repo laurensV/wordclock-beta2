@@ -5,6 +5,6 @@
   "host": "raw.githubusercontent.com",
   "port": 443,
   "test": "test",
-  "firmware": "/laurensV/wordclock-beta/main/firmware/wordclock.ino.bin",
-  "filesystem": "/laurensV/wordclock-beta/main/firmware/filesystem.bin"
+  "firmware": "/laurensV/wordclock-beta2/main/firmware/wordclock.ino.bin",
+  "filesystem": "/laurensV/wordclock-beta2/main/firmware/filesystem.bin"
 }
