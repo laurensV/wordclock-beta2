@@ -18,11 +18,30 @@
     </div>
     <div class="rainbow"></div>
 
-    <!-- layout editor on the clock face -->
+    <!-- layout editor on the clock face, with a preview of what the clock shows -->
     <div class="widget">
-      <clock-face :layout="layoutString" :width="clockWidth" :height="clockHeight" @edit="(i, v) => v !== undefined && setCell(i, v)"></clock-face>
-      <p class="help">Tap a letter to change it; typing moves on to the next cell. Empty cells have no letter, for example behind a picture: those leds are never lit and the digital time and the IP address then use the four corners.<span v-if="gaps"> Currently {{ gaps }} empty cells.</span> Type <code>*</code> for a led behind a name or picture and <code>&amp;</code> for a led behind an icon; they get their own color on the control page.</p>
-      <div class="legend"><span class="l-letter">letter</span><span class="l-empty">empty, never lit</span><span class="l-name">name/picture (*)</span><span class="l-icon">icon (&amp;)</span></div>
+      <clock-face :layout="layoutString" :width="clockWidth" :height="clockHeight" :lit="previewLeds" @edit="(i, v) => v !== undefined && setCell(i, v)"></clock-face>
+      <div class="seg">
+        <div :class="{on: preview === 'edit'}" @click="preview = 'edit'">Edit</div>
+        <div :class="{on: preview === 'words'}" @click="preview = 'words'">Words</div>
+        <div :class="{on: preview === 'digital'}" @click="preview = 'digital'">Digital</div>
+        <div :class="{on: preview === 'ip'}" @click="preview = 'ip'">IP</div>
+      </div>
+      <template v-if="preview === 'words' || preview === 'digital'">
+        <div class="row"><span>Time</span><span><label class="live"><input type="checkbox" v-model="live"> now</label> <input type="time" v-model="previewTime" @input="live = false"></span></div>
+        <div class="help" v-if="previewText" style="margin-top:0">{{ previewText }}</div>
+        <div class="warn" v-if="previewMissing.length">Cannot be shown: {{ previewMissing.join(', ') }}</div>
+      </template>
+      <div class="row" v-if="preview === 'ip'"><span>Last part of the IP address</span><input type="number" min="0" max="255" v-model.number="previewIp"></div>
+      <p class="help" v-if="preview === 'edit'">Tap a letter to change it; typing moves on to the next cell. Empty cells have no letter, for example behind a picture: those leds are never lit and the digital time and the IP address then use the four corners.<span v-if="gaps"> Currently {{ gaps }} empty cells.</span> Type <code>*</code> for a led behind a name or picture and <code>&amp;</code> for a led behind an icon; they get their own color on the control page.</p>
+      <div class="legend" v-if="preview === 'edit'"><span class="l-letter">letter</span><span class="l-empty">empty, never lit</span><span class="l-name">name/picture (*)</span><span class="l-icon">icon (&amp;)</span></div>
+    </div>
+
+    <!-- what the layout as edited (not yet saved) cannot show -->
+    <div class="card">
+      <h3>Layout check</h3>
+      <div class="ok" v-if="!problems.length">All times, the digital time and the IP address can be shown ✓</div>
+      <div v-for="p in problems" :class="p.info ? 'note' : 'warn'"><b>{{ p.what }}:</b> {{ p.text }}</div>
     </div>
 
     <form class="card" @submit.prevent="save">

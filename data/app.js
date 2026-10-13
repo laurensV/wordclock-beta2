@@ -210,6 +210,25 @@ function useAdmin() {
   const asText = computed(() => Array.from({ length: clockHeight.value }, (_, r) =>
     layoutString.value.slice(r * clockWidth.value, (r + 1) * clockWidth.value).replace(/ /g, '.')).join('\n'));
   const gaps = computed(() => cells.value.filter(c => !c || c === ' ').length);
+  // preview: what the clock shows in words / digital / for the IP address, for the layout as it is being edited
+  const preview = ref('edit'), live = ref(true), previewTime = ref('12:00');
+  const ipGuess = /^\d+\.\d+\.\d+\.(\d+)$/.exec(location.hostname);
+  const previewIp = ref(ipGuess ? parseInt(ipGuess[1]) : 100);
+  const tick = () => { if (live.value) { const d = new Date(); previewTime.value = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; } };
+  tick(); setInterval(tick, 1000);
+  const sim = computed(() => {
+    const mx = new SimMatrix(layoutString.value, clockWidth.value || 0, clockHeight.value || 0);
+    const [h, m] = (previewTime.value || '0:0').split(':').map(Number);
+    let missing = [];
+    if (preview.value === 'words') missing = mx.showTimeString(timeToString(layoutString.value, h, m));
+    else if (preview.value === 'digital') mx.showDigitalTime(h, m);
+    else if (preview.value === 'ip') mx.printIP(Math.min(255, Math.max(0, previewIp.value || 0)));
+    return { leds: mx.leds, missing, text: preview.value === 'words' ? timeToString(layoutString.value, h, m).trim() : '' };
+  });
+  const previewLeds = computed(() => preview.value === 'edit' ? null : sim.value.leds);
+  const previewMissing = computed(() => sim.value.missing);
+  const previewText = computed(() => sim.value.text);
+  const problems = computed(() => checkLayout(layoutString.value, clockWidth.value || 0, clockHeight.value || 0));
   const setCell = (i, v) => { cells.value[i] = (v || ' ').toUpperCase().charAt(0); };
   // layout as text: one row per line, '.' or space = no letter; size follows the text.
   // layoutText is what the textarea shows; it is applied with fromText when the field is left.
@@ -255,14 +274,137 @@ function useAdmin() {
     }
   };
   onMounted(load);
-  return { version, fsversion, loading, saved, klokuniek, clockWidth, clockHeight, cells, layoutString, asText, layoutText, gaps, setCell, fromText, save, resetWifi, resetSettings };
+  return { version, fsversion, loading, saved, klokuniek, clockWidth, clockHeight, cells, layoutString, asText, layoutText, gaps, setCell, fromText, save, resetWifi, resetSettings,
+    preview, live, previewTime, previewIp, previewLeds, previewMissing, previewText, problems };
+}
+
+// ---------------------------------------------------------------------------
+// clock simulation (admin page): what the firmware lights for a time or for the IP address
+// (port of src/font.h, src/ledmatrix.cpp and the display functions in wordclock.ino)
+// ---------------------------------------------------------------------------
+const FONT_W = 3, FONT_H = 5;
+const FONT_NUMBERS = [[7, 5, 5, 5, 7], [1, 3, 1, 1, 1], [7, 1, 7, 4, 7], [7, 1, 7, 1, 7], [5, 5, 7, 1, 1], [7, 4, 7, 1, 7], [4, 4, 7, 5, 7], [7, 1, 1, 1, 1], [7, 5, 7, 5, 7], [7, 5, 7, 1, 1]];
+const FONT_I = [2, 2, 2, 2, 2], FONT_P = [7, 5, 7, 4, 4], FONT_I_NARROW = [4, 4, 4, 4, 4], FONT_IP_WIDTH = 5;
+function timeToStringDutch(hours, minutes) {
+  const w = ["EEN", "TWEE", "DRIE", "VIER", "VIJF", "ZES", "ZEVEN", "ACHT", "NEGEN", "TIEN", "ELF", "TWAALF", "DERTIEN", "VEERTIEN", "KWART", "ZES TIEN", "ZEVEN TIEN", "ACHT TIEN", "NEGEN TIEN"];
+  let message = "HET IS ";
+  if (minutes > 0 && minutes < 20) message += w[minutes - 1] + " OVER ";
+  else if (minutes >= 20 && minutes < 30) message += w[29 - minutes] + " VOOR HALF ";
+  else if (minutes == 30) message += "HALF ";
+  else if (minutes > 30 && minutes < 45) message += w[minutes - 31] + " OVER HALF ";
+  else if (minutes >= 45) message += w[59 - minutes] + " VOOR ";
+  if (hours >= 12) hours -= 12;
+  if (minutes >= 20) hours++;
+  if (hours == 0) hours = 12;
+  message += w[hours - 1] + " ";
+  if (minutes == 0) message += "UUR ";
+  return message;
+}
+function timeToStringEnglish(hours, minutes) {
+  const w = ["ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE", "THIR TEEN", "FOUR TEEN", "A QUARTER", "SIX TEEN", "SEVEN TEEN", "EIGHTEEN", "NINE TEEN", "TWENTY", "TWENTY ONE", "TWENTY TWO", "TWENTY THREE", "TWENTY FOUR", "TWENTY FIVE", "TWENTY SIX", "TWENTY SEVEN", "TWENTY EIGHT", "TWENTY NINE", "HALF"];
+  let message = "IT IS ";
+  if (minutes > 0 && minutes <= 30) message += w[minutes - 1] + " PAST ";
+  else if (minutes > 30) message += w[59 - minutes] + " TO ";
+  const ampm = hours >= 12 ? "PM" : "AM";
+  if (hours >= 12) hours -= 12;
+  if (minutes > 30) hours++;
+  if (hours == 0) hours = 12;
+  message += w[hours - 1] + " ";
+  if (minutes == 0) message += "OCLOCK ";
+  return message + ampm;
+}
+const timeToString = (layout, h, m) => layout.includes('OCLOCK') ? timeToStringEnglish(h, m) : timeToStringDutch(h, m);
+class SimMatrix {
+  constructor(layout, w, h) { this.layout = layout; this.w = w; this.h = h; this.leds = new Array(w * h).fill(''); }
+  set(row, col, t) { if (row >= 0 && row < this.h && col >= 0 && col < this.w) this.leds[row * this.w + col] = t; }
+  // a cell has a led unless the layout says ' ' or '.'; positions beyond the layout string count as leds (like the firmware)
+  hasLed(row, col) { if (row < 0 || row >= this.h || col < 0 || col >= this.w) return false; const i = row * this.w + col; return i >= this.layout.length || !' .'.includes(this.layout[i]); }
+  isLetter(row, col) { if (!this.hasLed(row, col)) return false; const i = row * this.w + col; return i >= this.layout.length || !'*&'.includes(this.layout[i]); }
+  box(x, y, test) { for (let i = 0; i < FONT_H; i++) for (let j = 0; j < FONT_W; j++) if (!test(y + i, x + j)) return false; return true; }
+  fontFits(x, y) { return this.box(x, y, (r, c) => this.isLetter(r, c)); }
+  boxHasLeds(x, y) { return this.box(x, y, (r, c) => this.hasLed(r, c)); }
+  centeredTimeFits() { return [[3, 0], [7, 0], [3, 6], [7, 6]].every(([x, y]) => this.boxHasLeds(x, y)); }
+  centeredIpFits() { return [[1, 0], [5, 0], [0, 6], [4, 6], [8, 6]].every(([x, y]) => this.boxHasLeds(x, y)); }
+  // only the lit pixels of a glyph need to be on letters
+  glyphFits(g, x, y) { for (let i = 0; i < FONT_H; i++) for (let j = 0; j < FONT_W; j++) if ((g[i] & (1 << j)) && !this.isLetter(i + y, FONT_W - j - 1 + x)) return false; return true; }
+  ipFits(x, y) { return this.glyphFits(FONT_I_NARROW, x, y) && this.glyphFits(FONT_P, x + 2, y); }
+  // nearest fitting slot to a corner (0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right), within the corner's own quarter
+  findSlot(corner, width, fits) {
+    if (this.w < width || this.h < FONT_H) return null;
+    const right = corner === 1 || corner === 3, bottom = corner >= 2;
+    const maxX = this.w - width, maxY = this.h - FONT_H, halfW = Math.floor(this.w / 2), halfH = Math.floor(this.h / 2);
+    const maxDx = right ? Math.max(0, maxX - (this.w - halfW)) : Math.max(0, halfW - width);
+    const maxDy = bottom ? Math.max(0, maxY - (this.h - halfH)) : Math.max(0, halfH - FONT_H);
+    for (let d = 0; d <= maxDx + maxDy; d++) for (let dy = 0; dy <= Math.min(d, maxDy); dy++) {
+      const dx = d - dy; if (dx > maxDx) continue;
+      const x = right ? maxX - dx : dx, y = bottom ? maxY - dy : dy;
+      if (fits(x, y)) return [x, y];
+    }
+    return null;
+  }
+  cornerSlot(c) { return this.findSlot(c, FONT_W, (x, y) => this.fontFits(x, y)); }
+  ipSlot() { return this.findSlot(0, FONT_IP_WIDTH, (x, y) => this.ipFits(x, y)); }
+  print(g, x, y, t) { for (let i = 0; i < FONT_H; i++) for (let j = 0; j < FONT_W; j++) if (g[i] & (1 << j)) this.set(i + y, FONT_W - j - 1 + x, t); }
+  showName() { for (let i = 0; i < this.layout.length; i++) { if (this.layout[i] === '*') this.set(Math.floor(i / this.w), i % this.w, 'name'); else if (this.layout[i] === '&') this.set(Math.floor(i / this.w), i % this.w, 'icon'); } }
+  // words are looked up left to right, each after the previous one; returns the words that were not found
+  showTimeString(ts) {
+    const missing = []; let last = 0;
+    for (const word of ts.trim().split(/ +/)) {
+      const pos = this.layout.indexOf(word, last);
+      if (pos >= 0) { for (let i = 0; i < word.length; i++) this.set(Math.floor((pos + i) / this.w), (pos + i) % this.w, 'time'); last = pos + word.length; }
+      else missing.push(word);
+    }
+    this.showName();
+    return missing;
+  }
+  showDigitalTime(hours, minutes) {
+    const digits = [Math.floor(hours / 10), hours % 10, Math.floor(minutes / 10), minutes % 10];
+    if (this.centeredTimeFits()) { [[3, 0], [7, 0], [3, 6], [7, 6]].forEach(([x, y], i) => this.print(FONT_NUMBERS[digits[i]], x, y, 'time')); }
+    else digits.forEach((d, i) => { const s = this.cornerSlot(i); if (s) this.print(FONT_NUMBERS[d], s[0], s[1], 'time'); });
+    this.showName();
+  }
+  // last part of the IP address without leading zeros: "IP" on top and the digits below, or in the corners
+  printIP(address) {
+    const digits = [];
+    if (address >= 100) digits.push(Math.floor(address / 100));
+    if (address >= 10) digits.push(Math.floor(address / 10) % 10);
+    digits.push(address % 10);
+    if (this.centeredIpFits()) {
+      this.print(FONT_I, 1, 0, 'other'); this.print(FONT_P, 5, 0, 'other');
+      digits.forEach((d, i) => this.print(FONT_NUMBERS[d], i * 4, 6, 'other'));
+    } else {
+      let corner = 0; const s = this.ipSlot();
+      if (s) { this.print(FONT_I_NARROW, s[0], s[1], 'other'); this.print(FONT_P, s[0] + 2, s[1], 'other'); corner = 1; }
+      for (const d of digits) { const c = this.cornerSlot(corner++); if (c) this.print(FONT_NUMBERS[d], c[0], c[1], 'other'); }
+    }
+  }
+}
+// everything a layout cannot show: words for any minute of the day, the digital time and the IP address
+function checkLayout(layout, w, h) {
+  const problems = [], mx = new SimMatrix(layout, w, h), missing = {};
+  for (let hh = 0; hh < 24; hh++) for (let mm = 0; mm < 60; mm++) {
+    for (const word of new SimMatrix(layout, w, h).showTimeString(timeToString(layout, hh, mm))) (missing[word] = missing[word] || []).push(`${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`);
+  }
+  Object.entries(missing).sort((a, b) => b[1].length - a[1].length).forEach(([word, times]) =>
+    problems.push({ what: 'word clock', text: `word "${word}" cannot be shown (${times.length} times, e.g. ${times.slice(0, 4).join(', ')})` }));
+  const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+  if (!mx.centeredTimeFits()) {
+    for (let i = 0; i < 4; i++) if (!mx.cornerSlot(i)) problems.push({ what: 'digital clock', text: `no 3x5 block of letters near the ${corners[i]} corner for digit ${i + 1}` });
+    let first = 1;
+    if (!mx.ipSlot()) { first = 0; problems.push({ what: 'IP address', text: '"IP" does not fit in the top-left corner, only the digits are shown', info: true }); }
+    for (let i = 0; i < 3; i++) if (!mx.cornerSlot(first + i)) problems.push({ what: 'IP address', text: `no 3x5 block of letters near the ${corners[first + i]} corner for IP digit ${i + 1}` });
+  } else if (!mx.centeredIpFits()) {
+    problems.push({ what: 'IP address', text: 'the digital time is centered but "IP" + 3 digits do not fit centered: the IP address is shown in the corners', info: true });
+  }
+  return problems;
 }
 
 // ---------------------------------------------------------------------------
 // clock face editor (admin page): one cell per led, tap to type a letter
 // ---------------------------------------------------------------------------
+const SIM_COLORS = { time: '#ffffff', other: '#00ff00', name: '#ff4d4d', icon: '#4d8dff' };  // the IP address is always green, like the firmware
 const ClockFace = {
-  props: ['layout', 'width', 'height'],
+  props: ['layout', 'width', 'height', 'lit'],
   emits: ['edit'],
   data() { return { editing: -1 }; },
   computed: {
@@ -271,12 +413,13 @@ const ClockFace = {
   methods: {
     // what to show in a cell: letters as they are, '*' (name/picture led) as ★, '&' (icon led) as ●, no led as nothing
     symbol(ch) { return ch === '*' ? '★' : ch === '&' ? '●' : ' .'.includes(ch) ? '' : ch; },
-    startEdit(i) { this.editing = i; this.$nextTick(() => { const el = this.$el.querySelector('input'); if (el) { el.focus(); el.select(); } }); },
+    color(t) { return SIM_COLORS[t]; },
+    startEdit(i) { if (this.lit) return; this.editing = i; this.$nextTick(() => { const el = this.$el.querySelector('input'); if (el) { el.focus(); el.select(); } }); },
     typed(i, v) { this.$emit('edit', i, v); if (v && i + 1 < this.width * this.height) this.startEdit(i + 1); },
   },
-  template: `<div class="face" :style="{gridTemplateColumns: 'repeat(' + width + ', 1fr)'}">
-    <div v-for="(ch, i) in cells" :key="i" class="cell" :class="{noled: ' .'.includes(ch), special: '*&'.includes(ch)}" :title="ch === '*' ? 'name/picture led (*)' : ch === '&' ? 'icon led (&)' : null" @click="startEdit(i)">
-      <input v-if="editing === i" :value="' .'.includes(ch) ? '' : ch" @input="typed(i, $event.target.value.slice(-1))" @keydown.backspace.prevent="typed(i, '')" @blur="editing === i && (editing = -1)">
+  template: `<div class="face" :class="{preview: !!lit}" :style="{gridTemplateColumns: 'repeat(' + width + ', 1fr)'}">
+    <div v-for="(ch, i) in cells" :key="i" class="cell" :class="{noled: ' .'.includes(ch), special: '*&'.includes(ch), lit: lit && lit[i]}" :style="lit && lit[i] ? {'--c': color(lit[i])} : {}" :title="ch === '*' ? 'name/picture led (*)' : ch === '&' ? 'icon led (&)' : null" @click="startEdit(i)">
+      <input v-if="!lit && editing === i" :value="' .'.includes(ch) ? '' : ch" @input="typed(i, $event.target.value.slice(-1))" @keydown.backspace.prevent="typed(i, '')" @blur="editing === i && (editing = -1)">
       <span v-else>{{ symbol(ch) }}</span>
     </div></div>`,
 };
