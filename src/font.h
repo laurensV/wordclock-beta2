@@ -24,5 +24,8 @@ const uint8_t FONT_NUMBERS[10][5] = {
 // =============================================================================
 const uint8_t FONT_I[] = { 0b00000010, 0b00000010, 0b00000010, 0b00000010, 0b00000010 };
 const uint8_t FONT_P[] = { 0b00000111, 0b00000101, 0b00000111, 0b00000100, 0b00000100 };
+// 1 column wide I, in the left column of the 3x5 box (used for "IP" in a corner)
+const uint8_t FONT_I_NARROW[] = { 0b00000100, 0b00000100, 0b00000100, 0b00000100, 0b00000100 };
+#define FONT_IP_WIDTH 5  // narrow I, 1 column space, P
 
 #endif
