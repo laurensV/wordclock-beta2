@@ -6,970 +6,550 @@
   <title>JouwWoordklok</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="JouwWoordklok Control Panel">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="/app.css">
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@jaames/iro@5"></script>
-  <style>
-    .IroColorPicker {
-      display: flex !important;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .settings {
-      height: 0px;
-      transition: height 0.5s;
-      overflow: hidden;
-    }
-
-    .settings.show {
-      height: 350px;
-    }
-    .settings.overflow-visible {
-      overflow: visible;
-    }
-    .mode-link a:hover img {
-      transform: scale(1.1);
-    }
-    .mode-link[disabled] {
-      opacity: 0.3;
-    }
-    .mode-link img {
-      width: 50px;
-      height: 50px;
-      transition: transform 0.2s;
-      transform-origin: center;
-      display: inline-block;
-    }
-    .mode-link.is-active {
-      font-weight: bold;
-    }
-    .mode-link.is-active img{
-      transform: scale(1.2) !important;
-    }
-    /* Timezone Selector Styles */
-    .timezone-dropdown {
-      position: relative;
-      width: 100%;
-    }
-    .timezone-input {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #dbdbdb;
-      border-radius: 4px;
-      background-color: white;
-      cursor: pointer;
-    }
-    .timezone-dropdown-content {
-      display: none;
-      position: absolute;
-      background-color: white;
-      width: 100%;
-      max-height: 300px;
-      overflow-y: auto;
-      border: 1px solid #dbdbdb;
-      border-radius: 4px;
-      z-index: 100;
-      margin-top: 2px;
-    }
-    .timezone-dropdown-content.show {
-      display: block;
-    }
-    .timezone-search {
-      position: sticky;
-      top: 0;
-      padding: 8px;
-      border-bottom: 1px solid #dbdbdb;
-      background-color: white;
-    }
-    .timezone-search input {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #dbdbdb;
-      border-radius: 4px;
-    }
-    .timezone-group {
-      padding: 5px 10px;
-      font-weight: bold;
-      background-color: #f5f5f5;
-      border-bottom: 1px solid #dbdbdb;
-    }
-    .timezone-item {
-      padding: 8px 10px;
-      cursor: pointer;
-    }
-    .timezone-item:hover {
-      background-color: #f5f5f5;
-    }
-    .timezone-item.selected {
-      background-color: #ebf5fb;
-    }
-  </style>
 </head>
 
-<body class="has-background-white-ter" style="min-height:100vh">
-  <div id="app" style="max-width: 500px;" class="mx-auto has-background-white">
-    <section class="section pt-2">
-      <div class="container">
-        <div class="is-flex is-justify-content-space-between is-align-items-center">
-          <img :src="klokuniek ? '/img/klokuniek.webp' : '/img/logo.png'" width="250" />
-          <a @click="showSettings = !showSettings"><img src="/img/settings.svg" style="height:30px" /></a>
+<body>
+  <div id="app" class="app">
+    <div class="hdr">
+      <img class="logo" :src="klokuniek ? '/img/klokuniek.webp' : '/img/logo.png'" alt="">
+      <button type="button" class="gear" :title="T('Settings', 'Instellingen')" @click="showSettings = true"><img src="/img/settings.svg" alt=""></button>
+    </div>
+    <div class="rainbow"></div>
+
+    <div v-if="loading" class="loading">{{ T('Loading…', 'Laden…') }}</div>
+    <template v-else>
+      <!-- clock mode (sent immediately) -->
+      <div class="card">
+        <h3>{{ T('Mode', 'Modus') }}</h3>
+        <div class="seg modes" :disabled="loadingSettings ? 'disabled' : null">
+          <div :class="{on: mode === 0}" @click="setMode('word_clock')"><img class="mono" src="/img/word_clock.svg" alt="">{{ T('Words', 'Woorden') }}</div>
+          <div :class="{on: mode === 1}" @click="setMode('digital_clock')"><img class="mono" src="/img/digital_clock.svg" alt="">{{ T('Digital', 'Digitaal') }}</div>
+          <div :class="{on: mode === 2}" @click="setMode('rainbow')"><img src="/img/rainbow.png" alt="">{{ T('Rainbow', 'Regenboog') }}</div>
         </div>
-        <form @submit.prevent="saveSettings" class="settings" :class="{'show': showSettings, 'overflow-visible': showTimezoneDropdown}">
-          <div class="mt-2">
-            <div>{{isEnglish ? 'Brightness' : 'Helderheid'}} <span v-if="nm">{{isEnglish ? 'during the day' : 'overdag'}}</span>: <b v-if="brightness === null || loadingBrightness || loadingSettings">...</b><b v-else>{{Math.ceil(brightness/255 * 100)}}%</b></div>
-            <input :disabled="brightness === null || loadingBrightness || loadingSettings ? 'disabled' : null" @change="saveBrightness()" style="width:100%; height: 30px;" list="values" v-model="brightness" type="range" id="brightness" name="brightness" min="1" max="255">
-          </div>
-          <div class="is-flex is-justify-content-space-between is-align-items-center py-2">
-            <label for="nm" class="is-flex-grow-1">{{isEnglish ? 'Nightmode:' : 'Nachtmodus:'}} <b>{{nm ? (isEnglish ? 'on' : 'aan') : (isEnglish ? 'off' : 'uit')}}</b></label>
-            <input class="checkbox" type="checkbox" id="nm" name="nm" v-model="nm">
-          </div>
-          <div class="is-flex is-justify-content-space-between is-align-items-center pb-2">
-            <div>
-              <label class="is-flex-grow-1" for="nm_start" :class="{'has-text-grey': !nm}">{{isEnglish ? 'start time:' : 'start tijd:'}} </label>
-              <input :required="nm" v-model="nm_start" :disabled="!nm" type="time" id="nm_start" name="nm_start" min="00:00"
-                max="23:59">
-            </div>
-            <div>
-              <label class="is-flex-grow-1" for="nm_end" :class="{'has-text-grey': !nm}">{{isEnglish ? 'end time:' : 'eind tijd:'}} </label>
-              <input :required="nm" v-model="nm_end" :disabled="!nm" type="time" id="nm_end" name="nm_end" min="00:00" max="23:59">
-            </div>
-          </div>
-          <div class="mt-2">
-            <div :class="{'has-text-grey': !nm}">{{isEnglish ? 'Brightness at night' : 'Helderheid \'s nachts:'}} <b v-if="nightmodeBrightness=== null || loadingBrightness || loadingSettings">...</b><b v-else>{{Math.ceil(nightmodeBrightness/255 * 100)}}%</b></div>
-            <input :disabled="!nm || nightmodeBrightness === null || loadingBrightness || loadingSettings ? 'disabled' : null" @change="saveBrightness(true)" style="width:100%; height: 30px;" list="values" v-model="nightmodeBrightness" type="range" id="nm_brightness" name="nm_brightness" min="0" max="255">
-          </div>
-          <div class="is-flex is-justify-content-space-between is-align-items-center py-2">
-            <label for="timezone" class="is-flex-grow-1">{{isEnglish ? 'Timezone:' : 'Tijdzone:'}}</label>
-            <div class="timezone-dropdown is-flex-grow-1">
-              <div class="timezone-input" @click="toggleTimezoneDropdown">
-                {{ getTimezoneDisplayName(timezone) }}
-              </div>
-              <div class="timezone-dropdown-content" :class="{'show': showTimezoneDropdown}">
-                <div class="timezone-search">
-                  <input type="text" :placeholder="isEnglish ? 'Search timezone...' : 'Tijdzone zoeken...'" v-model="timezoneSearch" @input="filterTimezones">
-                </div>
-                <div v-for="group in filteredTimezoneGroups" :key="group.continent">
-                  <div class="timezone-group">{{ group.continent }}</div>
-                  <div 
-                    v-for="tz in group.timezones" 
-                    :key="tz.value" 
-                    class="timezone-item" 
-                    :class="{'selected': timezone === tz.value}"
-                    @click="selectTimezone(tz.value)">
-                    {{ tz.name }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <small class="is-pulled-left mt-3">
-            Firmware Version: <b>v{{version}}</b><br>
-            Filesystem Version: <b>v{{fsversion}}</b>
-          </small>
-          <div class="has-text-right mt-2">
-            <button :disabled="loadingSettings ? 'disabled' : null" class="button is-info" :class="{'is-loading': loadingSettings}" type="submit">Save Settings</button>
-          </div>
-        </form>
-        <div class="columns is-multiline mt-4 is-mobile mb-0">
-          <div class="column is-4">
-            <div class="mode-link" :disabled="loadingSettings ? 'disabled' : null" :class="{'is-active': mode === 0}">
-              <div class="has-text-centered"><a  @click="setMode('word_clock')" ><img src="/img/word_clock.svg" /></a></div>
-              <p class="has-text-centered">{{isEnglish ? 'Word Clock' : 'Woord Klok'}}</p>
-            </div>
-          </div>
-          <div class="column is-4">
-            <div class="mode-link" :disabled="loadingSettings ? 'disabled' : null" :class="{'is-active': mode === 1}">
-              <div class="has-text-centered"><a  @click="setMode('digital_clock')" ><img src="/img/digital_clock.svg" /></a></div>
-              <p class="has-text-centered">{{isEnglish ? 'Digital Clock' : 'Digitale Klok'}}</p>
-            </div>
-          </div>
-          <div class="column is-4">
-            <div class="mode-link" :disabled="loadingSettings ? 'disabled' : null" :class="{'is-active': mode === 2}">
-              <div class="has-text-centered"><a  @click="setMode('rainbow')" ><img src="/img/rainbow.png" /></a></div>
-              <p class="has-text-centered">{{isEnglish ? 'Rainbow' : 'Regenboog'}}</p>
-            </div>
-          </div>
-        </div>
-        <div class="tabs is-centered is-medium" v-if="mode !== 2">
-          <ul>
-            <li :class="{'is-active': colorType === 'time'}" @click="colorType = 'time'"><a>{{isEnglish ? 'Time' : 'Tijd'}}</a></li>
-            <li v-if="clockLayout && clockLayout.includes('*')" :class="{'is-active': colorType === 'name'}" @click="colorType = 'name'"><a>{{isEnglish ? 'Name/Picture' : 'Naam/Foto'}}</a></li>
-            <li v-if="clockLayout && clockLayout.includes('&')" :class="{'is-active': colorType === 'icon'}" @click="colorType = 'icon'"><a>{{isEnglish ? 'Icons' : 'Tekens'}}</a></li>
-          </ul>
-        </div>
-        <div id="picker" v-show="!loading && mode !== 2"></div>
-        <div v-show="loading">Loading..</div>
       </div>
-    </section>
+
+      <!-- colors (sent while picking) -->
+      <div class="card" v-show="mode !== 2">
+        <h3>{{ T('Color', 'Kleur') }}</h3>
+        <div class="chips">
+          <div class="chip" :class="{on: colorType === 'time'}" @click="colorType = 'time'"><span class="dot" :style="{background: colors.time}"></span>{{ T('Time', 'Tijd') }}</div>
+          <div class="chip" v-if="hasName" :class="{on: colorType === 'name'}" @click="colorType = 'name'"><span class="dot" :style="{background: colors.name}"></span>{{ T('Name/Picture', 'Naam/Foto') }}</div>
+          <div class="chip" v-if="hasIcon" :class="{on: colorType === 'icon'}" @click="colorType = 'icon'"><span class="dot" :style="{background: colors.icon}"></span>{{ T('Icons', 'Tekens') }}</div>
+        </div>
+        <div id="picker"></div>
+      </div>
+
+      <!-- brightness (sent when the slider is released); with night mode on, both day and night are shown and the active one is marked -->
+      <div class="card">
+        <h3>{{ T('Brightness', 'Helderheid') }}</h3>
+        <div class="row"><span>{{ nmSaved ? T('During the day', 'Overdag') : T('Brightness', 'Helderheid') }} <span class="badge" v-if="nmSaved && !isNight">{{ T('now', 'nu') }}</span></span><b>{{ (loadingBrightness || loadingSettings) ? '…' : pct(brightness) }}</b></div>
+        <input type="range" min="1" max="255" v-model="brightness" :disabled="brightness === null || loadingBrightness || loadingSettings" @change="saveBrightness()">
+        <template v-if="nmSaved">
+          <div class="row"><span>{{ T('At night', "'s Nachts") }} <span class="badge" v-if="isNight">{{ T('now', 'nu') }}</span></span><b>{{ (loadingBrightness || loadingSettings) ? '…' : pct(nightmodeBrightness) }}</b></div>
+          <input type="range" min="0" max="255" v-model="nightmodeBrightness" :disabled="nightmodeBrightness === null || loadingBrightness || loadingSettings" @change="saveBrightness(true)">
+        </template>
+      </div>
+
+      <div class="ver">Firmware v{{ version }} · Filesystem v{{ fsversion }}</div>
+    </template>
+
+    <!-- settings drawer (sent with the save button) -->
+    <div class="sheet-bg" v-if="showSettings" @click.self="showSettings = false">
+      <form class="sheet" @submit.prevent="saveSettings">
+        <div class="handle"></div>
+        <div class="row" style="padding:0"><h2>{{ T('Settings', 'Instellingen') }}</h2><button type="button" class="close" :title="T('Close', 'Sluiten')" @click="showSettings = false">✕</button></div>
+        <div class="row"><span>{{ T('Night mode', 'Nachtmodus') }} <span class="badge" v-if="isNight">{{ T('active now', 'nu actief') }}</span></span><input type="checkbox" class="switch" v-model="nm"></div>
+        <div class="row" :class="{dim: !nm}"><span>{{ T('From', 'Van') }}</span><input type="time" v-model="nm_start" :disabled="!nm" :required="nm" min="00:00" max="23:59"></div>
+        <div class="row" :class="{dim: !nm}"><span>{{ T('Until', 'Tot') }}</span><input type="time" v-model="nm_end" :disabled="!nm" :required="nm" min="00:00" max="23:59"></div>
+        <div class="row" :class="{dim: !nm}"><span>{{ T('Brightness at night', "Helderheid 's nachts") }}</span><b>{{ loadingBrightness ? '…' : pct(nightmodeBrightness) }}</b></div>
+        <input type="range" min="0" max="255" v-model="nightmodeBrightness" :disabled="!nm || nightmodeBrightness === null || loadingBrightness || loadingSettings" @change="saveBrightness(true)">
+        <div class="row" style="margin-top:8px"><span>{{ T('Time zone', 'Tijdzone') }}</span></div>
+        <timezone-picker v-model="timezone"></timezone-picker>
+        <button class="btn" type="submit" :disabled="loadingSettings">{{ T('Save settings', 'Instellingen opslaan') }}</button>
+        <div class="ok" v-if="saved">{{ T('Saved', 'Opgeslagen') }} ✓</div>
+      </form>
+    </div>
   </div>
+
+  <script src="/app.js"></script>
   <script>
-    const { createApp, ref, onMounted, watch, computed } = Vue;
-    function throttle(f, delay = 50) {
-      let lastCall = Number.NEGATIVE_INFINITY;
-      let wait;
-      let handle;
-      return (...args) => {
-        wait = lastCall + delay - Date.now();
-        clearTimeout(handle);
-        handle = setTimeout(() => {
-          f(...args);
-          lastCall = Date.now();
-        }, wait);
-      };
-    }
-    let colorPicker;
-    let tabChange = false;
-    const baseUrl = '';
+const timezoneOptions = [
+{ value: "GMT0_0", name: "Africa/Abidjan", continent: "Africa" },
+{ value: "GMT0_1", name: "Africa/Accra", continent: "Africa" },
+{ value: "EAT-3_0", name: "Africa/Addis_Ababa", continent: "Africa" },
+{ value: "CET-1_0", name: "Africa/Algiers", continent: "Africa" },
+{ value: "EAT-3_1", name: "Africa/Asmara", continent: "Africa" },
+{ value: "GMT0_2", name: "Africa/Bamako", continent: "Africa" },
+{ value: "WAT-1_0", name: "Africa/Bangui", continent: "Africa" },
+{ value: "GMT0_3", name: "Africa/Banjul", continent: "Africa" },
+{ value: "GMT0_4", name: "Africa/Bissau", continent: "Africa" },
+{ value: "CAT-2_0", name: "Africa/Blantyre", continent: "Africa" },
+{ value: "WAT-1_1", name: "Africa/Brazzaville", continent: "Africa" },
+{ value: "CAT-2_1", name: "Africa/Bujumbura", continent: "Africa" },
+{ value: "EET-2_0", name: "Africa/Cairo", continent: "Africa" },
+{ value: "<+01>-1_0", name: "Africa/Casablanca", continent: "Africa" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_0", name: "Africa/Ceuta", continent: "Africa" },
+{ value: "GMT0_5", name: "Africa/Conakry", continent: "Africa" },
+{ value: "GMT0_6", name: "Africa/Dakar", continent: "Africa" },
+{ value: "EAT-3_2", name: "Africa/Dar_es_Salaam", continent: "Africa" },
+{ value: "EAT-3_3", name: "Africa/Djibouti", continent: "Africa" },
+{ value: "WAT-1_2", name: "Africa/Douala", continent: "Africa" },
+{ value: "<+01>-1_1", name: "Africa/El_Aaiun", continent: "Africa" },
+{ value: "GMT0_7", name: "Africa/Freetown", continent: "Africa" },
+{ value: "CAT-2_2", name: "Africa/Gaborone", continent: "Africa" },
+{ value: "CAT-2_3", name: "Africa/Harare", continent: "Africa" },
+{ value: "SAST-2_0", name: "Africa/Johannesburg", continent: "Africa" },
+{ value: "CAT-2_4", name: "Africa/Juba", continent: "Africa" },
+{ value: "EAT-3_4", name: "Africa/Kampala", continent: "Africa" },
+{ value: "CAT-2_5", name: "Africa/Khartoum", continent: "Africa" },
+{ value: "CAT-2_6", name: "Africa/Kigali", continent: "Africa" },
+{ value: "WAT-1_3", name: "Africa/Kinshasa", continent: "Africa" },
+{ value: "WAT-1_4", name: "Africa/Lagos", continent: "Africa" },
+{ value: "WAT-1_5", name: "Africa/Libreville", continent: "Africa" },
+{ value: "GMT0_8", name: "Africa/Lome", continent: "Africa" },
+{ value: "WAT-1_6", name: "Africa/Luanda", continent: "Africa" },
+{ value: "CAT-2_7", name: "Africa/Lubumbashi", continent: "Africa" },
+{ value: "CAT-2_8", name: "Africa/Lusaka", continent: "Africa" },
+{ value: "WAT-1_7", name: "Africa/Malabo", continent: "Africa" },
+{ value: "CAT-2_9", name: "Africa/Maputo", continent: "Africa" },
+{ value: "SAST-2_1", name: "Africa/Maseru", continent: "Africa" },
+{ value: "SAST-2_2", name: "Africa/Mbabane", continent: "Africa" },
+{ value: "EAT-3_5", name: "Africa/Mogadishu", continent: "Africa" },
+{ value: "GMT0_9", name: "Africa/Monrovia", continent: "Africa" },
+{ value: "EAT-3_6", name: "Africa/Nairobi", continent: "Africa" },
+{ value: "WAT-1_8", name: "Africa/Ndjamena", continent: "Africa" },
+{ value: "WAT-1_9", name: "Africa/Niamey", continent: "Africa" },
+{ value: "GMT0_10", name: "Africa/Nouakchott", continent: "Africa" },
+{ value: "GMT0_11", name: "Africa/Ouagadougou", continent: "Africa" },
+{ value: "WAT-1_10", name: "Africa/Porto-Novo", continent: "Africa" },
+{ value: "GMT0_12", name: "Africa/Sao_Tome", continent: "Africa" },
+{ value: "EET-2_1", name: "Africa/Tripoli", continent: "Africa" },
+{ value: "CET-1_1", name: "Africa/Tunis", continent: "Africa" },
+{ value: "CAT-2_10", name: "Africa/Windhoek", continent: "Africa" },
+{ value: "HST10HDT,M3.2.0,M11.1.0_0", name: "America/Adak", continent: "America" },
+{ value: "AKST9AKDT,M3.2.0,M11.1.0_0", name: "America/Anchorage", continent: "America" },
+{ value: "AST4_0", name: "America/Anguilla", continent: "America" },
+{ value: "AST4_1", name: "America/Antigua", continent: "America" },
+{ value: "<+03>3_0", name: "America/Araguaina", continent: "America" },
+{ value: "<+03>3_1", name: "America/Argentina/Buenos_Aires", continent: "America" },
+{ value: "<+03>3_2", name: "America/Argentina/Catamarca", continent: "America" },
+{ value: "<+03>3_3", name: "America/Argentina/Cordoba", continent: "America" },
+{ value: "<+03>3_4", name: "America/Argentina/Jujuy", continent: "America" },
+{ value: "<+03>3_5", name: "America/Argentina/La_Rioja", continent: "America" },
+{ value: "<+03>3_6", name: "America/Argentina/Mendoza", continent: "America" },
+{ value: "<+03>3_7", name: "America/Argentina/Rio_Gallegos", continent: "America" },
+{ value: "<+03>3_8", name: "America/Argentina/Salta", continent: "America" },
+{ value: "<+03>3_9", name: "America/Argentina/San_Juan", continent: "America" },
+{ value: "<+03>3_10", name: "America/Argentina/San_Luis", continent: "America" },
+{ value: "<+03>3_11", name: "America/Argentina/Tucuman", continent: "America" },
+{ value: "<+03>3_12", name: "America/Argentina/Ushuaia", continent: "America" },
+{ value: "AST4_2", name: "America/Aruba", continent: "America" },
+{ value: "<+04>4<+03>,M10.1.0/0,M3.4.0/0_0", name: "America/Asuncion", continent: "America" },
+{ value: "EST5_0", name: "America/Atikokan", continent: "America" },
+{ value: "<+03>3_13", name: "America/Bahia", continent: "America" },
+{ value: "CST6_0", name: "America/Bahia_Banderas", continent: "America" },
+{ value: "AST4_3", name: "America/Barbados", continent: "America" },
+{ value: "<+03>3_14", name: "America/Belem", continent: "America" },
+{ value: "CST6_1", name: "America/Belize", continent: "America" },
+{ value: "AST4_4", name: "America/Blanc-Sablon", continent: "America" },
+{ value: "<+04>4_0", name: "America/Boa_Vista", continent: "America" },
+{ value: "<+05>5_0", name: "America/Bogota", continent: "America" },
+{ value: "MST7MDT,M3.2.0,M11.1.0_0", name: "America/Boise", continent: "America" },
+{ value: "MST7MDT,M3.2.0,M11.1.0_1", name: "America/Cambridge_Bay", continent: "America" },
+{ value: "<+04>4_1", name: "America/Campo_Grande", continent: "America" },
+{ value: "EST5_1", name: "America/Cancun", continent: "America" },
+{ value: "<+04>4_2", name: "America/Caracas", continent: "America" },
+{ value: "<+03>3_15", name: "America/Cayenne", continent: "America" },
+{ value: "EST5_2", name: "America/Cayman", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_0", name: "America/Chicago", continent: "America" },
+{ value: "CST6_2", name: "America/Chihuahua", continent: "America" },
+{ value: "CST6_3", name: "America/Costa_Rica", continent: "America" },
+{ value: "MST7_0", name: "America/Creston", continent: "America" },
+{ value: "<+04>4_3", name: "America/Cuiaba", continent: "America" },
+{ value: "AST4_5", name: "America/Curacao", continent: "America" },
+{ value: "GMT0_13", name: "America/Danmarkshavn", continent: "America" },
+{ value: "MST7_1", name: "America/Dawson", continent: "America" },
+{ value: "MST7_2", name: "America/Dawson_Creek", continent: "America" },
+{ value: "MST7MDT,M3.2.0,M11.1.0_2", name: "America/Denver", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_0", name: "America/Detroit", continent: "America" },
+{ value: "AST4_6", name: "America/Dominica", continent: "America" },
+{ value: "MST7MDT,M3.2.0,M11.1.0_3", name: "America/Edmonton", continent: "America" },
+{ value: "<+05>5_1", name: "America/Eirunepe", continent: "America" },
+{ value: "CST6_4", name: "America/El_Salvador", continent: "America" },
+{ value: "MST7_3", name: "America/Fort_Nelson", continent: "America" },
+{ value: "<+03>3_16", name: "America/Fortaleza", continent: "America" },
+{ value: "AST4ADT,M3.2.0,M11.1.0_0", name: "America/Glace_Bay", continent: "America" },
+{ value: "<+02>2_0", name: "America/Godthab", continent: "America" },
+{ value: "AST4ADT,M3.2.0,M11.1.0_1", name: "America/Goose_Bay", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_1", name: "America/Grand_Turk", continent: "America" },
+{ value: "AST4_7", name: "America/Grenada", continent: "America" },
+{ value: "AST4_8", name: "America/Guadeloupe", continent: "America" },
+{ value: "CST6_5", name: "America/Guatemala", continent: "America" },
+{ value: "<+05>5_2", name: "America/Guayaquil", continent: "America" },
+{ value: "<+04>4_4", name: "America/Guyana", continent: "America" },
+{ value: "AST4ADT,M3.2.0,M11.1.0_2", name: "America/Halifax", continent: "America" },
+{ value: "CST5CDT,M3.2.0/0,M11.1.0/1_0", name: "America/Havana", continent: "America" },
+{ value: "MST7_4", name: "America/Hermosillo", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_2", name: "America/Indiana/Indianapolis", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_1", name: "America/Indiana/Knox", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_3", name: "America/Indiana/Marengo", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_4", name: "America/Indiana/Petersburg", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_2", name: "America/Indiana/Tell_City", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_5", name: "America/Indiana/Vevay", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_6", name: "America/Indiana/Vincennes", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_7", name: "America/Indiana/Winamac", continent: "America" },
+{ value: "MST7MDT,M3.2.0,M11.1.0_4", name: "America/Inuvik", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_8", name: "America/Iqaluit", continent: "America" },
+{ value: "EST5_3", name: "America/Jamaica", continent: "America" },
+{ value: "AKST9AKDT,M3.2.0,M11.1.0_1", name: "America/Juneau", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_9", name: "America/Kentucky/Louisville", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_10", name: "America/Kentucky/Monticello", continent: "America" },
+{ value: "AST4_9", name: "America/Kralendijk", continent: "America" },
+{ value: "<+04>4_5", name: "America/La_Paz", continent: "America" },
+{ value: "<+05>5_3", name: "America/Lima", continent: "America" },
+{ value: "PST8PDT,M3.2.0,M11.1.0_0", name: "America/Los_Angeles", continent: "America" },
+{ value: "AST4_10", name: "America/Lower_Princes", continent: "America" },
+{ value: "<+03>3_17", name: "America/Maceio", continent: "America" },
+{ value: "CST6_6", name: "America/Managua", continent: "America" },
+{ value: "<+04>4_6", name: "America/Manaus", continent: "America" },
+{ value: "AST4_11", name: "America/Marigot", continent: "America" },
+{ value: "AST4_12", name: "America/Martinique", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_3", name: "America/Matamoros", continent: "America" },
+{ value: "MST7_5", name: "America/Mazatlan", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_4", name: "America/Menominee", continent: "America" },
+{ value: "CST6_7", name: "America/Merida", continent: "America" },
+{ value: "AKST9AKDT,M3.2.0,M11.1.0_2", name: "America/Metlakatla", continent: "America" },
+{ value: "CST6_8", name: "America/Mexico_City", continent: "America" },
+{ value: "<+03>3<+02>,M3.2.0,M11.1.0_0", name: "America/Miquelon", continent: "America" },
+{ value: "AST4ADT,M3.2.0,M11.1.0_3", name: "America/Moncton", continent: "America" },
+{ value: "CST6_9", name: "America/Monterrey", continent: "America" },
+{ value: "<+03>3_18", name: "America/Montevideo", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_11", name: "America/Montreal", continent: "America" },
+{ value: "AST4_13", name: "America/Montserrat", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_12", name: "America/Nassau", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_13", name: "America/New_York", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_14", name: "America/Nipigon", continent: "America" },
+{ value: "AKST9AKDT,M3.2.0,M11.1.0_3", name: "America/Nome", continent: "America" },
+{ value: "<+02>2_1", name: "America/Noronha", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_5", name: "America/North_Dakota/Beulah", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_6", name: "America/North_Dakota/Center", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_7", name: "America/North_Dakota/New_Salem", continent: "America" },
+{ value: "<+02>2_2", name: "America/Nuuk", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_8", name: "America/Ojinaga", continent: "America" },
+{ value: "EST5_4", name: "America/Panama", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_15", name: "America/Pangnirtung", continent: "America" },
+{ value: "<+03>3_19", name: "America/Paramaribo", continent: "America" },
+{ value: "MST7_6", name: "America/Phoenix", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_16", name: "America/Port-au-Prince", continent: "America" },
+{ value: "AST4_14", name: "America/Port_of_Spain", continent: "America" },
+{ value: "<+04>4_7", name: "America/Porto_Velho", continent: "America" },
+{ value: "AST4_15", name: "America/Puerto_Rico", continent: "America" },
+{ value: "<+03>3_20", name: "America/Punta_Arenas", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_9", name: "America/Rainy_River", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_10", name: "America/Rankin_Inlet", continent: "America" },
+{ value: "<+03>3_21", name: "America/Recife", continent: "America" },
+{ value: "CST6_10", name: "America/Regina", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_11", name: "America/Resolute", continent: "America" },
+{ value: "<+05>5_4", name: "America/Rio_Branco", continent: "America" },
+{ value: "<+03>3_22", name: "America/Santarem", continent: "America" },
+{ value: "<+04>4<+03>,M9.1.6/24,M4.1.6/24_0", name: "America/Santiago", continent: "America" },
+{ value: "AST4_16", name: "America/Santo_Domingo", continent: "America" },
+{ value: "<+03>3_23", name: "America/Sao_Paulo", continent: "America" },
+{ value: "<+01>1<+00>,M3.5.0/0,M10.5.0/1_0", name: "America/Scoresbysund", continent: "America" },
+{ value: "AKST9AKDT,M3.2.0,M11.1.0_4", name: "America/Sitka", continent: "America" },
+{ value: "AST4_17", name: "America/St_Barthelemy", continent: "America" },
+{ value: "NST3:30NDT,M3.2.0,M11.1.0_0", name: "America/St_Johns", continent: "America" },
+{ value: "AST4_18", name: "America/St_Kitts", continent: "America" },
+{ value: "AST4_19", name: "America/St_Lucia", continent: "America" },
+{ value: "AST4_20", name: "America/St_Thomas", continent: "America" },
+{ value: "AST4_21", name: "America/St_Vincent", continent: "America" },
+{ value: "CST6_11", name: "America/Swift_Current", continent: "America" },
+{ value: "CST6_12", name: "America/Tegucigalpa", continent: "America" },
+{ value: "AST4ADT,M3.2.0,M11.1.0_4", name: "America/Thule", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_17", name: "America/Thunder_Bay", continent: "America" },
+{ value: "PST8PDT,M3.2.0,M11.1.0_1", name: "America/Tijuana", continent: "America" },
+{ value: "EST5EDT,M3.2.0,M11.1.0_18", name: "America/Toronto", continent: "America" },
+{ value: "AST4_22", name: "America/Tortola", continent: "America" },
+{ value: "PST8PDT,M3.2.0,M11.1.0_2", name: "America/Vancouver", continent: "America" },
+{ value: "MST7_7", name: "America/Whitehorse", continent: "America" },
+{ value: "CST6CDT,M3.2.0,M11.1.0_12", name: "America/Winnipeg", continent: "America" },
+{ value: "AKST9AKDT,M3.2.0,M11.1.0_5", name: "America/Yakutat", continent: "America" },
+{ value: "MST7MDT,M3.2.0,M11.1.0_5", name: "America/Yellowknife", continent: "America" },
+{ value: "<+11>-11_0", name: "Antarctica/Casey", continent: "Antarctica" },
+{ value: "<+07>-7_0", name: "Antarctica/Davis", continent: "Antarctica" },
+{ value: "<+10>-10_0", name: "Antarctica/DumontDUrville", continent: "Antarctica" },
+{ value: "AEST-10AEDT,M10.1.0,M4.1.0/3_0", name: "Antarctica/Macquarie", continent: "Antarctica" },
+{ value: "<+05>-5_0", name: "Antarctica/Mawson", continent: "Antarctica" },
+{ value: "NZST-12NZDT,M9.5.0,M4.1.0/3_0", name: "Antarctica/McMurdo", continent: "Antarctica" },
+{ value: "<+03>3_24", name: "Antarctica/Palmer", continent: "Antarctica" },
+{ value: "<+03>3_25", name: "Antarctica/Rothera", continent: "Antarctica" },
+{ value: "<+03>-3_0", name: "Antarctica/Syowa", continent: "Antarctica" },
+{ value: "<+00>0<+02>-2,M3.5.0/1,M10.5.0/3_0", name: "Antarctica/Troll", continent: "Antarctica" },
+{ value: "<+06>-6_0", name: "Antarctica/Vostok", continent: "Antarctica" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_1", name: "Arctic/Longyearbyen", continent: "Arctic" },
+{ value: "<+03>-3_1", name: "Asia/Aden", continent: "Asia" },
+{ value: "<+06>-6_1", name: "Asia/Almaty", continent: "Asia" },
+{ value: "<+03>-3_2", name: "Asia/Amman", continent: "Asia" },
+{ value: "<+12>-12_0", name: "Asia/Anadyr", continent: "Asia" },
+{ value: "<+05>-5_1", name: "Asia/Aqtau", continent: "Asia" },
+{ value: "<+05>-5_2", name: "Asia/Aqtobe", continent: "Asia" },
+{ value: "<+05>-5_3", name: "Asia/Ashgabat", continent: "Asia" },
+{ value: "<+05>-5_4", name: "Asia/Atyrau", continent: "Asia" },
+{ value: "<+03>-3_3", name: "Asia/Baghdad", continent: "Asia" },
+{ value: "<+03>-3_4", name: "Asia/Bahrain", continent: "Asia" },
+{ value: "<+04>-4_0", name: "Asia/Baku", continent: "Asia" },
+{ value: "<+07>-7_1", name: "Asia/Bangkok", continent: "Asia" },
+{ value: "<+07>-7_2", name: "Asia/Barnaul", continent: "Asia" },
+{ value: "EET-2EEST,M3.5.0/0,M10.5.0/0_0", name: "Asia/Beirut", continent: "Asia" },
+{ value: "<+06>-6_2", name: "Asia/Bishkek", continent: "Asia" },
+{ value: "<+08>-8_0", name: "Asia/Brunei", continent: "Asia" },
+{ value: "<+09>-9_0", name: "Asia/Chita", continent: "Asia" },
+{ value: "<+08>-8_1", name: "Asia/Choibalsan", continent: "Asia" },
+{ value: "<+0530>-5:30_0", name: "Asia/Colombo", continent: "Asia" },
+{ value: "<+03>-3_5", name: "Asia/Damascus", continent: "Asia" },
+{ value: "<+06>-6_3", name: "Asia/Dhaka", continent: "Asia" },
+{ value: "<+09>-9_1", name: "Asia/Dili", continent: "Asia" },
+{ value: "<+04>-4_1", name: "Asia/Dubai", continent: "Asia" },
+{ value: "<+05>-5_5", name: "Asia/Dushanbe", continent: "Asia" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_0", name: "Asia/Famagusta", continent: "Asia" },
+{ value: "EET-2EEST,M3.4.4/50,M10.4.4/50_0", name: "Asia/Gaza", continent: "Asia" },
+{ value: "EET-2EEST,M3.4.4/50,M10.4.4/50_1", name: "Asia/Hebron", continent: "Asia" },
+{ value: "<+07>-7_3", name: "Asia/Ho_Chi_Minh", continent: "Asia" },
+{ value: "HKT-8_0", name: "Asia/Hong_Kong", continent: "Asia" },
+{ value: "<+07>-7_4", name: "Asia/Hovd", continent: "Asia" },
+{ value: "<+08>-8_2", name: "Asia/Irkutsk", continent: "Asia" },
+{ value: "WIB-7_0", name: "Asia/Jakarta", continent: "Asia" },
+{ value: "WIT-9_0", name: "Asia/Jayapura", continent: "Asia" },
+{ value: "IST-2IDT,M3.4.4/26,M10.5.0_0", name: "Asia/Jerusalem", continent: "Asia" },
+{ value: "<+0430>-4:30_0", name: "Asia/Kabul", continent: "Asia" },
+{ value: "<+12>-12_1", name: "Asia/Kamchatka", continent: "Asia" },
+{ value: "PKT-5_0", name: "Asia/Karachi", continent: "Asia" },
+{ value: "<+0545>-5:45_0", name: "Asia/Kathmandu", continent: "Asia" },
+{ value: "<+09>-9_2", name: "Asia/Khandyga", continent: "Asia" },
+{ value: "IST-5:30_0", name: "Asia/Kolkata", continent: "Asia" },
+{ value: "<+07>-7_5", name: "Asia/Krasnoyarsk", continent: "Asia" },
+{ value: "<+08>-8_3", name: "Asia/Kuala_Lumpur", continent: "Asia" },
+{ value: "<+08>-8_4", name: "Asia/Kuching", continent: "Asia" },
+{ value: "<+03>-3_6", name: "Asia/Kuwait", continent: "Asia" },
+{ value: "CST-8_0", name: "Asia/Macau", continent: "Asia" },
+{ value: "<+11>-11_1", name: "Asia/Magadan", continent: "Asia" },
+{ value: "WITA-8_0", name: "Asia/Makassar", continent: "Asia" },
+{ value: "PST-8_0", name: "Asia/Manila", continent: "Asia" },
+{ value: "<+04>-4_2", name: "Asia/Muscat", continent: "Asia" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_1", name: "Asia/Nicosia", continent: "Asia" },
+{ value: "<+07>-7_6", name: "Asia/Novokuznetsk", continent: "Asia" },
+{ value: "<+07>-7_7", name: "Asia/Novosibirsk", continent: "Asia" },
+{ value: "<+06>-6_4", name: "Asia/Omsk", continent: "Asia" },
+{ value: "<+05>-5_6", name: "Asia/Oral", continent: "Asia" },
+{ value: "<+07>-7_8", name: "Asia/Phnom_Penh", continent: "Asia" },
+{ value: "WIB-7_1", name: "Asia/Pontianak", continent: "Asia" },
+{ value: "KST-9_0", name: "Asia/Pyongyang", continent: "Asia" },
+{ value: "<+03>-3_7", name: "Asia/Qatar", continent: "Asia" },
+{ value: "<+05>-5_7", name: "Asia/Qyzylorda", continent: "Asia" },
+{ value: "<+03>-3_8", name: "Asia/Riyadh", continent: "Asia" },
+{ value: "<+11>-11_2", name: "Asia/Sakhalin", continent: "Asia" },
+{ value: "<+05>-5_8", name: "Asia/Samarkand", continent: "Asia" },
+{ value: "KST-9_1", name: "Asia/Seoul", continent: "Asia" },
+{ value: "CST-8_1", name: "Asia/Shanghai", continent: "Asia" },
+{ value: "<+08>-8_5", name: "Asia/Singapore", continent: "Asia" },
+{ value: "<+11>-11_3", name: "Asia/Srednekolymsk", continent: "Asia" },
+{ value: "CST-8_2", name: "Asia/Taipei", continent: "Asia" },
+{ value: "<+05>-5_9", name: "Asia/Tashkent", continent: "Asia" },
+{ value: "<+04>-4_3", name: "Asia/Tbilisi", continent: "Asia" },
+{ value: "<+0330>-3:30_0", name: "Asia/Tehran", continent: "Asia" },
+{ value: "<+06>-6_5", name: "Asia/Thimphu", continent: "Asia" },
+{ value: "JST-9_0", name: "Asia/Tokyo", continent: "Asia" },
+{ value: "<+07>-7_9", name: "Asia/Tomsk", continent: "Asia" },
+{ value: "<+08>-8_6", name: "Asia/Ulaanbaatar", continent: "Asia" },
+{ value: "<+06>-6_6", name: "Asia/Urumqi", continent: "Asia" },
+{ value: "<+10>-10_1", name: "Asia/Ust-Nera", continent: "Asia" },
+{ value: "<+07>-7_10", name: "Asia/Vientiane", continent: "Asia" },
+{ value: "<+10>-10_2", name: "Asia/Vladivostok", continent: "Asia" },
+{ value: "<+09>-9_3", name: "Asia/Yakutsk", continent: "Asia" },
+{ value: "<+0630>-6:30_0", name: "Asia/Yangon", continent: "Asia" },
+{ value: "<+05>-5_10", name: "Asia/Yekaterinburg", continent: "Asia" },
+{ value: "<+04>-4_4", name: "Asia/Yerevan", continent: "Asia" },
+{ value: "<+01>1<+00>,M3.5.0/0,M10.5.0/1_1", name: "Atlantic/Azores", continent: "Atlantic" },
+{ value: "AST4ADT,M3.2.0,M11.1.0_5", name: "Atlantic/Bermuda", continent: "Atlantic" },
+{ value: "WET0WEST,M3.5.0/1,M10.5.0_0", name: "Atlantic/Canary", continent: "Atlantic" },
+{ value: "<+01>1_0", name: "Atlantic/Cape_Verde", continent: "Atlantic" },
+{ value: "WET0WEST,M3.5.0/1,M10.5.0_1", name: "Atlantic/Faroe", continent: "Atlantic" },
+{ value: "WET0WEST,M3.5.0/1,M10.5.0_2", name: "Atlantic/Madeira", continent: "Atlantic" },
+{ value: "GMT0_14", name: "Atlantic/Reykjavik", continent: "Atlantic" },
+{ value: "<+02>2_3", name: "Atlantic/South_Georgia", continent: "Atlantic" },
+{ value: "GMT0_15", name: "Atlantic/St_Helena", continent: "Atlantic" },
+{ value: "<+03>3_26", name: "Atlantic/Stanley", continent: "Atlantic" },
+{ value: "ACST-9:30ACDT,M10.1.0,M4.1.0/3_0", name: "Australia/Adelaide", continent: "Australia" },
+{ value: "AEST-10_0", name: "Australia/Brisbane", continent: "Australia" },
+{ value: "ACST-9:30ACDT,M10.1.0,M4.1.0/3_1", name: "Australia/Broken_Hill", continent: "Australia" },
+{ value: "AEST-10AEDT,M10.1.0,M4.1.0/3_1", name: "Australia/Currie", continent: "Australia" },
+{ value: "ACST-9:30_0", name: "Australia/Darwin", continent: "Australia" },
+{ value: "<+0845>-8:45_0", name: "Australia/Eucla", continent: "Australia" },
+{ value: "AEST-10AEDT,M10.1.0,M4.1.0/3_2", name: "Australia/Hobart", continent: "Australia" },
+{ value: "AEST-10_1", name: "Australia/Lindeman", continent: "Australia" },
+{ value: "<+1030>-10:30<+11>-11,M10.1.0,M4.1.0_0", name: "Australia/Lord_Howe", continent: "Australia" },
+{ value: "AEST-10AEDT,M10.1.0,M4.1.0/3_3", name: "Australia/Melbourne", continent: "Australia" },
+{ value: "AWST-8_0", name: "Australia/Perth", continent: "Australia" },
+{ value: "AEST-10AEDT,M10.1.0,M4.1.0/3_4", name: "Australia/Sydney", continent: "Australia" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_2", name: "Europe/Amsterdam", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_3", name: "Europe/Andorra", continent: "Europe" },
+{ value: "<+04>-4_5", name: "Europe/Astrakhan", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_2", name: "Europe/Athens", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_4", name: "Europe/Belgrade", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_5", name: "Europe/Berlin", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_6", name: "Europe/Bratislava", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_7", name: "Europe/Brussels", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_3", name: "Europe/Bucharest", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_8", name: "Europe/Budapest", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_9", name: "Europe/Busingen", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0,M10.5.0/3_0", name: "Europe/Chisinau", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_10", name: "Europe/Copenhagen", continent: "Europe" },
+{ value: "IST-1GMT0,M10.5.0,M3.5.0/1_0", name: "Europe/Dublin", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_11", name: "Europe/Gibraltar", continent: "Europe" },
+{ value: "GMT0BST,M3.5.0/1,M10.5.0_0", name: "Europe/Guernsey", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_4", name: "Europe/Helsinki", continent: "Europe" },
+{ value: "GMT0BST,M3.5.0/1,M10.5.0_1", name: "Europe/Isle_of_Man", continent: "Europe" },
+{ value: "<+03>-3_9", name: "Europe/Istanbul", continent: "Europe" },
+{ value: "GMT0BST,M3.5.0/1,M10.5.0_2", name: "Europe/Jersey", continent: "Europe" },
+{ value: "EET-2_2", name: "Europe/Kaliningrad", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_5", name: "Europe/Kiev", continent: "Europe" },
+{ value: "<+03>-3_10", name: "Europe/Kirov", continent: "Europe" },
+{ value: "WET0WEST,M3.5.0/1,M10.5.0_3", name: "Europe/Lisbon", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_12", name: "Europe/Ljubljana", continent: "Europe" },
+{ value: "GMT0BST,M3.5.0/1,M10.5.0_3", name: "Europe/London", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_13", name: "Europe/Luxembourg", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_14", name: "Europe/Madrid", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_15", name: "Europe/Malta", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_6", name: "Europe/Mariehamn", continent: "Europe" },
+{ value: "<+03>-3_11", name: "Europe/Minsk", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_16", name: "Europe/Monaco", continent: "Europe" },
+{ value: "MSK-3_0", name: "Europe/Moscow", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_17", name: "Europe/Oslo", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_18", name: "Europe/Paris", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_19", name: "Europe/Podgorica", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_20", name: "Europe/Prague", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_7", name: "Europe/Riga", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_21", name: "Europe/Rome", continent: "Europe" },
+{ value: "<+04>-4_6", name: "Europe/Samara", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_22", name: "Europe/San_Marino", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_23", name: "Europe/Sarajevo", continent: "Europe" },
+{ value: "<+04>-4_7", name: "Europe/Saratov", continent: "Europe" },
+{ value: "MSK-3_1", name: "Europe/Simferopol", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_24", name: "Europe/Skopje", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_8", name: "Europe/Sofia", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_25", name: "Europe/Stockholm", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_9", name: "Europe/Tallinn", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_26", name: "Europe/Tirane", continent: "Europe" },
+{ value: "<+04>-4_8", name: "Europe/Ulyanovsk", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_10", name: "Europe/Uzhgorod", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_27", name: "Europe/Vaduz", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_28", name: "Europe/Vatican", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_29", name: "Europe/Vienna", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_11", name: "Europe/Vilnius", continent: "Europe" },
+{ value: "<+03>-3_12", name: "Europe/Volgograd", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_30", name: "Europe/Warsaw", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_31", name: "Europe/Zagreb", continent: "Europe" },
+{ value: "EET-2EEST,M3.5.0/3,M10.5.0/4_12", name: "Europe/Zaporozhye", continent: "Europe" },
+{ value: "CET-1CEST,M3.5.0,M10.5.0/3_32", name: "Europe/Zurich", continent: "Europe" },
+{ value: "EAT-3_7", name: "Indian/Antananarivo", continent: "Indian" },
+{ value: "<+06>-6_7", name: "Indian/Chagos", continent: "Indian" },
+{ value: "<+07>-7_11", name: "Indian/Christmas", continent: "Indian" },
+{ value: "<+0630>-6:30_1", name: "Indian/Cocos", continent: "Indian" },
+{ value: "EAT-3_8", name: "Indian/Comoro", continent: "Indian" },
+{ value: "<+05>-5_11", name: "Indian/Kerguelen", continent: "Indian" },
+{ value: "<+04>-4_9", name: "Indian/Mahe", continent: "Indian" },
+{ value: "<+05>-5_12", name: "Indian/Maldives", continent: "Indian" },
+{ value: "<+04>-4_10", name: "Indian/Mauritius", continent: "Indian" },
+{ value: "EAT-3_9", name: "Indian/Mayotte", continent: "Indian" },
+{ value: "<+04>-4_11", name: "Indian/Reunion", continent: "Indian" },
+{ value: "<+13>-13_0", name: "Pacific/Apia", continent: "Pacific" },
+{ value: "NZST-12NZDT,M9.5.0,M4.1.0/3_1", name: "Pacific/Auckland", continent: "Pacific" },
+{ value: "<+11>-11_4", name: "Pacific/Bougainville", continent: "Pacific" },
+{ value: "<+1245>-12:45<+1345>,M9.5.0/2:45,M4.1.0/3:45_0", name: "Pacific/Chatham", continent: "Pacific" },
+{ value: "<+10>-10_3", name: "Pacific/Chuuk", continent: "Pacific" },
+{ value: "<+06>6<+05>,M9.1.6/22,M4.1.6/22_0", name: "Pacific/Easter", continent: "Pacific" },
+{ value: "<+11>-11_5", name: "Pacific/Efate", continent: "Pacific" },
+{ value: "<+13>-13_1", name: "Pacific/Enderbury", continent: "Pacific" },
+{ value: "<+13>-13_2", name: "Pacific/Fakaofo", continent: "Pacific" },
+{ value: "<+12>-12_2", name: "Pacific/Fiji", continent: "Pacific" },
+{ value: "<+12>-12_3", name: "Pacific/Funafuti", continent: "Pacific" },
+{ value: "<+06>6_0", name: "Pacific/Galapagos", continent: "Pacific" },
+{ value: "<+09>-9_4", name: "Pacific/Gambier", continent: "Pacific" },
+{ value: "<+11>-11_6", name: "Pacific/Guadalcanal", continent: "Pacific" },
+{ value: "ChST-10_0", name: "Pacific/Guam", continent: "Pacific" },
+{ value: "HST10_0", name: "Pacific/Honolulu", continent: "Pacific" },
+{ value: "<+14>-14_0", name: "Pacific/Kiritimati", continent: "Pacific" },
+{ value: "<+11>-11_7", name: "Pacific/Kosrae", continent: "Pacific" },
+{ value: "<+12>-12_4", name: "Pacific/Kwajalein", continent: "Pacific" },
+{ value: "<+12>-12_5", name: "Pacific/Majuro", continent: "Pacific" },
+{ value: "<+0930>9:30_0", name: "Pacific/Marquesas", continent: "Pacific" },
+{ value: "SST11_0", name: "Pacific/Midway", continent: "Pacific" },
+{ value: "<+12>-12_6", name: "Pacific/Nauru", continent: "Pacific" },
+{ value: "<+11>-11<+12>,M10.1.0,M4.1.0/3_0", name: "Pacific/Norfolk", continent: "Pacific" },
+{ value: "<+11>-11_8", name: "Pacific/Noumea", continent: "Pacific" },
+{ value: "SST11_1", name: "Pacific/Pago_Pago", continent: "Pacific" },
+{ value: "<+09>-9_5", name: "Pacific/Palau", continent: "Pacific" },
+{ value: "<+08>8_0", name: "Pacific/Pitcairn", continent: "Pacific" },
+{ value: "<+11>-11_9", name: "Pacific/Pohnpei", continent: "Pacific" },
+{ value: "<+10>-10_4", name: "Pacific/Port_Moresby", continent: "Pacific" },
+{ value: "<+10>10_0", name: "Pacific/Rarotonga", continent: "Pacific" },
+{ value: "ChST-10_1", name: "Pacific/Saipan", continent: "Pacific" },
+{ value: "<+10>10_1", name: "Pacific/Tahiti", continent: "Pacific" },
+{ value: "<+12>-12_7", name: "Pacific/Tarawa", continent: "Pacific" },
+{ value: "<+13>-13_3", name: "Pacific/Tongatapu", continent: "Pacific" },
+{ value: "<+12>-12_8", name: "Pacific/Wake", continent: "Pacific" },
+{ value: "<+12>-12_9", name: "Pacific/Wallis", continent: "Pacific" },
+{ value: "GMT0_16", name: "Etc/GMT", continent: "Etc" },
+{ value: "GMT0_17", name: "Etc/GMT+0", continent: "Etc" },
+{ value: "<+01>-1_2", name: "Etc/GMT+1", continent: "Etc" },
+{ value: "<+02>-2_0", name: "Etc/GMT+2", continent: "Etc" },
+{ value: "<+03>-3_13", name: "Etc/GMT+3", continent: "Etc" },
+{ value: "<+04>-4_12", name: "Etc/GMT+4", continent: "Etc" },
+{ value: "<+05>-5_13", name: "Etc/GMT+5", continent: "Etc" },
+{ value: "<+06>-6_8", name: "Etc/GMT+6", continent: "Etc" },
+{ value: "<+07>-7_12", name: "Etc/GMT+7", continent: "Etc" },
+{ value: "<+08>-8_7", name: "Etc/GMT+8", continent: "Etc" },
+{ value: "<+09>-9_6", name: "Etc/GMT+9", continent: "Etc" },
+{ value: "<+10>-10_5", name: "Etc/GMT+10", continent: "Etc" },
+{ value: "<+11>-11_10", name: "Etc/GMT+11", continent: "Etc" },
+{ value: "<+12>-12_10", name: "Etc/GMT+12", continent: "Etc" },
+{ value: "<+13>-13_4", name: "Etc/GMT+13", continent: "Etc" },
+{ value: "<+14>-14_1", name: "Etc/GMT+14", continent: "Etc" },
+{ value: "GMT0_18", name: "Etc/GMT-0", continent: "Etc" },
+{ value: "<+01>1_1", name: "Etc/GMT-1", continent: "Etc" },
+{ value: "<+02>2_4", name: "Etc/GMT-2", continent: "Etc" },
+{ value: "<+03>3_27", name: "Etc/GMT-3", continent: "Etc" },
+{ value: "<+04>4_8", name: "Etc/GMT-4", continent: "Etc" },
+{ value: "<+05>5_5", name: "Etc/GMT-5", continent: "Etc" },
+{ value: "<+06>6_1", name: "Etc/GMT-6", continent: "Etc" },
+{ value: "<+07>7_0", name: "Etc/GMT-7", continent: "Etc" },
+{ value: "<+08>8_1", name: "Etc/GMT-8", continent: "Etc" },
+{ value: "<+09>9_0", name: "Etc/GMT-9", continent: "Etc" },
+{ value: "<+10>10_2", name: "Etc/GMT-10", continent: "Etc" },
+{ value: "<+11>11_0", name: "Etc/GMT-11", continent: "Etc" },
+{ value: "<+12>12_0", name: "Etc/GMT-12", continent: "Etc" },
+{ value: "UTC0_0", name: "Etc/UCT", continent: "Etc" },
+{ value: "UTC0_1", name: "Etc/UTC", continent: "Etc" },
+{ value: "GMT0_19", name: "Etc/Greenwich", continent: "Etc" },
+{ value: "UTC0_2", name: "Etc/Universal", continent: "Etc" },
+{ value: "UTC0_3", name: "Etc/Zulu", continent: "Etc" },
+];
 
     createApp({
+      components: { TimezonePicker },
       setup() {
-        const colorType = ref('time');
-        const loading = ref(false);
-        const loadingSettings = ref(false);
-        const loadingBrightness = ref(false);
-        const showSettings = ref(false);
-        const brightness = ref();
-        const nightmodeBrightness = ref(); 
-        const nm = ref();
-        const nm_end = ref();
-        const nm_start = ref();
-        const mode = ref();
-        const clockWidth = ref();
-        const clockHeight = ref();
-        const clockLayout = ref();
-        const version = ref();
-        const fsversion = ref();
-        const klokuniek = ref(false);
-        const timezone = ref('CET-1CEST,M3.5.0,M10.5.0/3_2');
-        const showTimezoneDropdown = ref(false);
-        const timezoneSearch = ref('');
-        
-        // Helper for timezone display and grouping
-        const timezoneOptions = [
-          { value: "GMT0_0", name: "Africa/Abidjan", continent: "Africa" },
-          { value: "GMT0_1", name: "Africa/Accra", continent: "Africa" },
-          { value: "EAT-3_0", name: "Africa/Addis_Ababa", continent: "Africa" },
-          { value: "CET-1_0", name: "Africa/Algiers", continent: "Africa" },
-          { value: "EAT-3_1", name: "Africa/Asmara", continent: "Africa" },
-          { value: "GMT0_2", name: "Africa/Bamako", continent: "Africa" },
-          { value: "WAT-1_0", name: "Africa/Bangui", continent: "Africa" },
-          { value: "GMT0_3", name: "Africa/Banjul", continent: "Africa" },
-          { value: "GMT0_4", name: "Africa/Bissau", continent: "Africa" },
-          { value: "CAT-2_0", name: "Africa/Blantyre", continent: "Africa" },
-          { value: "WAT-1_1", name: "Africa/Brazzaville", continent: "Africa" },
-          { value: "CAT-2_1", name: "Africa/Bujumbura", continent: "Africa" },
-          { value: "EET-2_0", name: "Africa/Cairo", continent: "Africa" },
-          { value: "<+01>-1_0", name: "Africa/Casablanca", continent: "Africa" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_0", name: "Africa/Ceuta", continent: "Africa" },
-          { value: "GMT0_5", name: "Africa/Conakry", continent: "Africa" },
-          { value: "GMT0_6", name: "Africa/Dakar", continent: "Africa" },
-          { value: "EAT-3_2", name: "Africa/Dar_es_Salaam", continent: "Africa" },
-          { value: "EAT-3_3", name: "Africa/Djibouti", continent: "Africa" },
-          { value: "WAT-1_2", name: "Africa/Douala", continent: "Africa" },
-          { value: "<+01>-1_1", name: "Africa/El_Aaiun", continent: "Africa" },
-          { value: "GMT0_7", name: "Africa/Freetown", continent: "Africa" },
-          { value: "CAT-2_2", name: "Africa/Gaborone", continent: "Africa" },
-          { value: "CAT-2_3", name: "Africa/Harare", continent: "Africa" },
-          { value: "SAST-2_0", name: "Africa/Johannesburg", continent: "Africa" },
-          { value: "CAT-2_4", name: "Africa/Juba", continent: "Africa" },
-          { value: "EAT-3_4", name: "Africa/Kampala", continent: "Africa" },
-          { value: "CAT-2_5", name: "Africa/Khartoum", continent: "Africa" },
-          { value: "CAT-2_6", name: "Africa/Kigali", continent: "Africa" },
-          { value: "WAT-1_3", name: "Africa/Kinshasa", continent: "Africa" },
-          { value: "WAT-1_4", name: "Africa/Lagos", continent: "Africa" },
-          { value: "WAT-1_5", name: "Africa/Libreville", continent: "Africa" },
-          { value: "GMT0_8", name: "Africa/Lome", continent: "Africa" },
-          { value: "WAT-1_6", name: "Africa/Luanda", continent: "Africa" },
-          { value: "CAT-2_7", name: "Africa/Lubumbashi", continent: "Africa" },
-          { value: "CAT-2_8", name: "Africa/Lusaka", continent: "Africa" },
-          { value: "WAT-1_7", name: "Africa/Malabo", continent: "Africa" },
-          { value: "CAT-2_9", name: "Africa/Maputo", continent: "Africa" },
-          { value: "SAST-2_1", name: "Africa/Maseru", continent: "Africa" },
-          { value: "SAST-2_2", name: "Africa/Mbabane", continent: "Africa" },
-          { value: "EAT-3_5", name: "Africa/Mogadishu", continent: "Africa" },
-          { value: "GMT0_9", name: "Africa/Monrovia", continent: "Africa" },
-          { value: "EAT-3_6", name: "Africa/Nairobi", continent: "Africa" },
-          { value: "WAT-1_8", name: "Africa/Ndjamena", continent: "Africa" },
-          { value: "WAT-1_9", name: "Africa/Niamey", continent: "Africa" },
-          { value: "GMT0_10", name: "Africa/Nouakchott", continent: "Africa" },
-          { value: "GMT0_11", name: "Africa/Ouagadougou", continent: "Africa" },
-          { value: "WAT-1_10", name: "Africa/Porto-Novo", continent: "Africa" },
-          { value: "GMT0_12", name: "Africa/Sao_Tome", continent: "Africa" },
-          { value: "EET-2_1", name: "Africa/Tripoli", continent: "Africa" },
-          { value: "CET-1_1", name: "Africa/Tunis", continent: "Africa" },
-          { value: "CAT-2_10", name: "Africa/Windhoek", continent: "Africa" },
-          { value: "HST10HDT,M3.2.0,M11.1.0_0", name: "America/Adak", continent: "America" },
-          { value: "AKST9AKDT,M3.2.0,M11.1.0_0", name: "America/Anchorage", continent: "America" },
-          { value: "AST4_0", name: "America/Anguilla", continent: "America" },
-          { value: "AST4_1", name: "America/Antigua", continent: "America" },
-          { value: "<+03>3_0", name: "America/Araguaina", continent: "America" },
-          { value: "<+03>3_1", name: "America/Argentina/Buenos_Aires", continent: "America" },
-          { value: "<+03>3_2", name: "America/Argentina/Catamarca", continent: "America" },
-          { value: "<+03>3_3", name: "America/Argentina/Cordoba", continent: "America" },
-          { value: "<+03>3_4", name: "America/Argentina/Jujuy", continent: "America" },
-          { value: "<+03>3_5", name: "America/Argentina/La_Rioja", continent: "America" },
-          { value: "<+03>3_6", name: "America/Argentina/Mendoza", continent: "America" },
-          { value: "<+03>3_7", name: "America/Argentina/Rio_Gallegos", continent: "America" },
-          { value: "<+03>3_8", name: "America/Argentina/Salta", continent: "America" },
-          { value: "<+03>3_9", name: "America/Argentina/San_Juan", continent: "America" },
-          { value: "<+03>3_10", name: "America/Argentina/San_Luis", continent: "America" },
-          { value: "<+03>3_11", name: "America/Argentina/Tucuman", continent: "America" },
-          { value: "<+03>3_12", name: "America/Argentina/Ushuaia", continent: "America" },
-          { value: "AST4_2", name: "America/Aruba", continent: "America" },
-          { value: "<+04>4<+03>,M10.1.0/0,M3.4.0/0_0", name: "America/Asuncion", continent: "America" },
-          { value: "EST5_0", name: "America/Atikokan", continent: "America" },
-          { value: "<+03>3_13", name: "America/Bahia", continent: "America" },
-          { value: "CST6_0", name: "America/Bahia_Banderas", continent: "America" },
-          { value: "AST4_3", name: "America/Barbados", continent: "America" },
-          { value: "<+03>3_14", name: "America/Belem", continent: "America" },
-          { value: "CST6_1", name: "America/Belize", continent: "America" },
-          { value: "AST4_4", name: "America/Blanc-Sablon", continent: "America" },
-          { value: "<+04>4_0", name: "America/Boa_Vista", continent: "America" },
-          { value: "<+05>5_0", name: "America/Bogota", continent: "America" },
-          { value: "MST7MDT,M3.2.0,M11.1.0_0", name: "America/Boise", continent: "America" },
-          { value: "MST7MDT,M3.2.0,M11.1.0_1", name: "America/Cambridge_Bay", continent: "America" },
-          { value: "<+04>4_1", name: "America/Campo_Grande", continent: "America" },
-          { value: "EST5_1", name: "America/Cancun", continent: "America" },
-          { value: "<+04>4_2", name: "America/Caracas", continent: "America" },
-          { value: "<+03>3_15", name: "America/Cayenne", continent: "America" },
-          { value: "EST5_2", name: "America/Cayman", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_0", name: "America/Chicago", continent: "America" },
-          { value: "CST6_2", name: "America/Chihuahua", continent: "America" },
-          { value: "CST6_3", name: "America/Costa_Rica", continent: "America" },
-          { value: "MST7_0", name: "America/Creston", continent: "America" },
-          { value: "<+04>4_3", name: "America/Cuiaba", continent: "America" },
-          { value: "AST4_5", name: "America/Curacao", continent: "America" },
-          { value: "GMT0_13", name: "America/Danmarkshavn", continent: "America" },
-          { value: "MST7_1", name: "America/Dawson", continent: "America" },
-          { value: "MST7_2", name: "America/Dawson_Creek", continent: "America" },
-          { value: "MST7MDT,M3.2.0,M11.1.0_2", name: "America/Denver", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_0", name: "America/Detroit", continent: "America" },
-          { value: "AST4_6", name: "America/Dominica", continent: "America" },
-          { value: "MST7MDT,M3.2.0,M11.1.0_3", name: "America/Edmonton", continent: "America" },
-          { value: "<+05>5_1", name: "America/Eirunepe", continent: "America" },
-          { value: "CST6_4", name: "America/El_Salvador", continent: "America" },
-          { value: "MST7_3", name: "America/Fort_Nelson", continent: "America" },
-          { value: "<+03>3_16", name: "America/Fortaleza", continent: "America" },
-          { value: "AST4ADT,M3.2.0,M11.1.0_0", name: "America/Glace_Bay", continent: "America" },
-          { value: "<+02>2_0", name: "America/Godthab", continent: "America" },
-          { value: "AST4ADT,M3.2.0,M11.1.0_1", name: "America/Goose_Bay", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_1", name: "America/Grand_Turk", continent: "America" },
-          { value: "AST4_7", name: "America/Grenada", continent: "America" },
-          { value: "AST4_8", name: "America/Guadeloupe", continent: "America" },
-          { value: "CST6_5", name: "America/Guatemala", continent: "America" },
-          { value: "<+05>5_2", name: "America/Guayaquil", continent: "America" },
-          { value: "<+04>4_4", name: "America/Guyana", continent: "America" },
-          { value: "AST4ADT,M3.2.0,M11.1.0_2", name: "America/Halifax", continent: "America" },
-          { value: "CST5CDT,M3.2.0/0,M11.1.0/1_0", name: "America/Havana", continent: "America" },
-          { value: "MST7_4", name: "America/Hermosillo", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_2", name: "America/Indiana/Indianapolis", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_1", name: "America/Indiana/Knox", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_3", name: "America/Indiana/Marengo", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_4", name: "America/Indiana/Petersburg", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_2", name: "America/Indiana/Tell_City", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_5", name: "America/Indiana/Vevay", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_6", name: "America/Indiana/Vincennes", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_7", name: "America/Indiana/Winamac", continent: "America" },
-          { value: "MST7MDT,M3.2.0,M11.1.0_4", name: "America/Inuvik", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_8", name: "America/Iqaluit", continent: "America" },
-          { value: "EST5_3", name: "America/Jamaica", continent: "America" },
-          { value: "AKST9AKDT,M3.2.0,M11.1.0_1", name: "America/Juneau", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_9", name: "America/Kentucky/Louisville", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_10", name: "America/Kentucky/Monticello", continent: "America" },
-          { value: "AST4_9", name: "America/Kralendijk", continent: "America" },
-          { value: "<+04>4_5", name: "America/La_Paz", continent: "America" },
-          { value: "<+05>5_3", name: "America/Lima", continent: "America" },
-          { value: "PST8PDT,M3.2.0,M11.1.0_0", name: "America/Los_Angeles", continent: "America" },
-          { value: "AST4_10", name: "America/Lower_Princes", continent: "America" },
-          { value: "<+03>3_17", name: "America/Maceio", continent: "America" },
-          { value: "CST6_6", name: "America/Managua", continent: "America" },
-          { value: "<+04>4_6", name: "America/Manaus", continent: "America" },
-          { value: "AST4_11", name: "America/Marigot", continent: "America" },
-          { value: "AST4_12", name: "America/Martinique", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_3", name: "America/Matamoros", continent: "America" },
-          { value: "MST7_5", name: "America/Mazatlan", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_4", name: "America/Menominee", continent: "America" },
-          { value: "CST6_7", name: "America/Merida", continent: "America" },
-          { value: "AKST9AKDT,M3.2.0,M11.1.0_2", name: "America/Metlakatla", continent: "America" },
-          { value: "CST6_8", name: "America/Mexico_City", continent: "America" },
-          { value: "<+03>3<+02>,M3.2.0,M11.1.0_0", name: "America/Miquelon", continent: "America" },
-          { value: "AST4ADT,M3.2.0,M11.1.0_3", name: "America/Moncton", continent: "America" },
-          { value: "CST6_9", name: "America/Monterrey", continent: "America" },
-          { value: "<+03>3_18", name: "America/Montevideo", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_11", name: "America/Montreal", continent: "America" },
-          { value: "AST4_13", name: "America/Montserrat", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_12", name: "America/Nassau", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_13", name: "America/New_York", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_14", name: "America/Nipigon", continent: "America" },
-          { value: "AKST9AKDT,M3.2.0,M11.1.0_3", name: "America/Nome", continent: "America" },
-          { value: "<+02>2_1", name: "America/Noronha", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_5", name: "America/North_Dakota/Beulah", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_6", name: "America/North_Dakota/Center", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_7", name: "America/North_Dakota/New_Salem", continent: "America" },
-          { value: "<+02>2_2", name: "America/Nuuk", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_8", name: "America/Ojinaga", continent: "America" },
-          { value: "EST5_4", name: "America/Panama", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_15", name: "America/Pangnirtung", continent: "America" },
-          { value: "<+03>3_19", name: "America/Paramaribo", continent: "America" },
-          { value: "MST7_6", name: "America/Phoenix", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_16", name: "America/Port-au-Prince", continent: "America" },
-          { value: "AST4_14", name: "America/Port_of_Spain", continent: "America" },
-          { value: "<+04>4_7", name: "America/Porto_Velho", continent: "America" },
-          { value: "AST4_15", name: "America/Puerto_Rico", continent: "America" },
-          { value: "<+03>3_20", name: "America/Punta_Arenas", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_9", name: "America/Rainy_River", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_10", name: "America/Rankin_Inlet", continent: "America" },
-          { value: "<+03>3_21", name: "America/Recife", continent: "America" },
-          { value: "CST6_10", name: "America/Regina", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_11", name: "America/Resolute", continent: "America" },
-          { value: "<+05>5_4", name: "America/Rio_Branco", continent: "America" },
-          { value: "<+03>3_22", name: "America/Santarem", continent: "America" },
-          { value: "<+04>4<+03>,M9.1.6/24,M4.1.6/24_0", name: "America/Santiago", continent: "America" },
-          { value: "AST4_16", name: "America/Santo_Domingo", continent: "America" },
-          { value: "<+03>3_23", name: "America/Sao_Paulo", continent: "America" },
-          { value: "<+01>1<+00>,M3.5.0/0,M10.5.0/1_0", name: "America/Scoresbysund", continent: "America" },
-          { value: "AKST9AKDT,M3.2.0,M11.1.0_4", name: "America/Sitka", continent: "America" },
-          { value: "AST4_17", name: "America/St_Barthelemy", continent: "America" },
-          { value: "NST3:30NDT,M3.2.0,M11.1.0_0", name: "America/St_Johns", continent: "America" },
-          { value: "AST4_18", name: "America/St_Kitts", continent: "America" },
-          { value: "AST4_19", name: "America/St_Lucia", continent: "America" },
-          { value: "AST4_20", name: "America/St_Thomas", continent: "America" },
-          { value: "AST4_21", name: "America/St_Vincent", continent: "America" },
-          { value: "CST6_11", name: "America/Swift_Current", continent: "America" },
-          { value: "CST6_12", name: "America/Tegucigalpa", continent: "America" },
-          { value: "AST4ADT,M3.2.0,M11.1.0_4", name: "America/Thule", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_17", name: "America/Thunder_Bay", continent: "America" },
-          { value: "PST8PDT,M3.2.0,M11.1.0_1", name: "America/Tijuana", continent: "America" },
-          { value: "EST5EDT,M3.2.0,M11.1.0_18", name: "America/Toronto", continent: "America" },
-          { value: "AST4_22", name: "America/Tortola", continent: "America" },
-          { value: "PST8PDT,M3.2.0,M11.1.0_2", name: "America/Vancouver", continent: "America" },
-          { value: "MST7_7", name: "America/Whitehorse", continent: "America" },
-          { value: "CST6CDT,M3.2.0,M11.1.0_12", name: "America/Winnipeg", continent: "America" },
-          { value: "AKST9AKDT,M3.2.0,M11.1.0_5", name: "America/Yakutat", continent: "America" },
-          { value: "MST7MDT,M3.2.0,M11.1.0_5", name: "America/Yellowknife", continent: "America" },
-          { value: "<+11>-11_0", name: "Antarctica/Casey", continent: "Antarctica" },
-          { value: "<+07>-7_0", name: "Antarctica/Davis", continent: "Antarctica" },
-          { value: "<+10>-10_0", name: "Antarctica/DumontDUrville", continent: "Antarctica" },
-          { value: "AEST-10AEDT,M10.1.0,M4.1.0/3_0", name: "Antarctica/Macquarie", continent: "Antarctica" },
-          { value: "<+05>-5_0", name: "Antarctica/Mawson", continent: "Antarctica" },
-          { value: "NZST-12NZDT,M9.5.0,M4.1.0/3_0", name: "Antarctica/McMurdo", continent: "Antarctica" },
-          { value: "<+03>3_24", name: "Antarctica/Palmer", continent: "Antarctica" },
-          { value: "<+03>3_25", name: "Antarctica/Rothera", continent: "Antarctica" },
-          { value: "<+03>-3_0", name: "Antarctica/Syowa", continent: "Antarctica" },
-          { value: "<+00>0<+02>-2,M3.5.0/1,M10.5.0/3_0", name: "Antarctica/Troll", continent: "Antarctica" },
-          { value: "<+06>-6_0", name: "Antarctica/Vostok", continent: "Antarctica" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_1", name: "Arctic/Longyearbyen", continent: "Arctic" },
-          { value: "<+03>-3_1", name: "Asia/Aden", continent: "Asia" },
-          { value: "<+06>-6_1", name: "Asia/Almaty", continent: "Asia" },
-          { value: "<+03>-3_2", name: "Asia/Amman", continent: "Asia" },
-          { value: "<+12>-12_0", name: "Asia/Anadyr", continent: "Asia" },
-          { value: "<+05>-5_1", name: "Asia/Aqtau", continent: "Asia" },
-          { value: "<+05>-5_2", name: "Asia/Aqtobe", continent: "Asia" },
-          { value: "<+05>-5_3", name: "Asia/Ashgabat", continent: "Asia" },
-          { value: "<+05>-5_4", name: "Asia/Atyrau", continent: "Asia" },
-          { value: "<+03>-3_3", name: "Asia/Baghdad", continent: "Asia" },
-          { value: "<+03>-3_4", name: "Asia/Bahrain", continent: "Asia" },
-          { value: "<+04>-4_0", name: "Asia/Baku", continent: "Asia" },
-          { value: "<+07>-7_1", name: "Asia/Bangkok", continent: "Asia" },
-          { value: "<+07>-7_2", name: "Asia/Barnaul", continent: "Asia" },
-          { value: "EET-2EEST,M3.5.0/0,M10.5.0/0_0", name: "Asia/Beirut", continent: "Asia" },
-          { value: "<+06>-6_2", name: "Asia/Bishkek", continent: "Asia" },
-          { value: "<+08>-8_0", name: "Asia/Brunei", continent: "Asia" },
-          { value: "<+09>-9_0", name: "Asia/Chita", continent: "Asia" },
-          { value: "<+08>-8_1", name: "Asia/Choibalsan", continent: "Asia" },
-          { value: "<+0530>-5:30_0", name: "Asia/Colombo", continent: "Asia" },
-          { value: "<+03>-3_5", name: "Asia/Damascus", continent: "Asia" },
-          { value: "<+06>-6_3", name: "Asia/Dhaka", continent: "Asia" },
-          { value: "<+09>-9_1", name: "Asia/Dili", continent: "Asia" },
-          { value: "<+04>-4_1", name: "Asia/Dubai", continent: "Asia" },
-          { value: "<+05>-5_5", name: "Asia/Dushanbe", continent: "Asia" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_0", name: "Asia/Famagusta", continent: "Asia" },
-          { value: "EET-2EEST,M3.4.4/50,M10.4.4/50_0", name: "Asia/Gaza", continent: "Asia" },
-          { value: "EET-2EEST,M3.4.4/50,M10.4.4/50_1", name: "Asia/Hebron", continent: "Asia" },
-          { value: "<+07>-7_3", name: "Asia/Ho_Chi_Minh", continent: "Asia" },
-          { value: "HKT-8_0", name: "Asia/Hong_Kong", continent: "Asia" },
-          { value: "<+07>-7_4", name: "Asia/Hovd", continent: "Asia" },
-          { value: "<+08>-8_2", name: "Asia/Irkutsk", continent: "Asia" },
-          { value: "WIB-7_0", name: "Asia/Jakarta", continent: "Asia" },
-          { value: "WIT-9_0", name: "Asia/Jayapura", continent: "Asia" },
-          { value: "IST-2IDT,M3.4.4/26,M10.5.0_0", name: "Asia/Jerusalem", continent: "Asia" },
-          { value: "<+0430>-4:30_0", name: "Asia/Kabul", continent: "Asia" },
-          { value: "<+12>-12_1", name: "Asia/Kamchatka", continent: "Asia" },
-          { value: "PKT-5_0", name: "Asia/Karachi", continent: "Asia" },
-          { value: "<+0545>-5:45_0", name: "Asia/Kathmandu", continent: "Asia" },
-          { value: "<+09>-9_2", name: "Asia/Khandyga", continent: "Asia" },
-          { value: "IST-5:30_0", name: "Asia/Kolkata", continent: "Asia" },
-          { value: "<+07>-7_5", name: "Asia/Krasnoyarsk", continent: "Asia" },
-          { value: "<+08>-8_3", name: "Asia/Kuala_Lumpur", continent: "Asia" },
-          { value: "<+08>-8_4", name: "Asia/Kuching", continent: "Asia" },
-          { value: "<+03>-3_6", name: "Asia/Kuwait", continent: "Asia" },
-          { value: "CST-8_0", name: "Asia/Macau", continent: "Asia" },
-          { value: "<+11>-11_1", name: "Asia/Magadan", continent: "Asia" },
-          { value: "WITA-8_0", name: "Asia/Makassar", continent: "Asia" },
-          { value: "PST-8_0", name: "Asia/Manila", continent: "Asia" },
-          { value: "<+04>-4_2", name: "Asia/Muscat", continent: "Asia" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_1", name: "Asia/Nicosia", continent: "Asia" },
-          { value: "<+07>-7_6", name: "Asia/Novokuznetsk", continent: "Asia" },
-          { value: "<+07>-7_7", name: "Asia/Novosibirsk", continent: "Asia" },
-          { value: "<+06>-6_4", name: "Asia/Omsk", continent: "Asia" },
-          { value: "<+05>-5_6", name: "Asia/Oral", continent: "Asia" },
-          { value: "<+07>-7_8", name: "Asia/Phnom_Penh", continent: "Asia" },
-          { value: "WIB-7_1", name: "Asia/Pontianak", continent: "Asia" },
-          { value: "KST-9_0", name: "Asia/Pyongyang", continent: "Asia" },
-          { value: "<+03>-3_7", name: "Asia/Qatar", continent: "Asia" },
-          { value: "<+05>-5_7", name: "Asia/Qyzylorda", continent: "Asia" },
-          { value: "<+03>-3_8", name: "Asia/Riyadh", continent: "Asia" },
-          { value: "<+11>-11_2", name: "Asia/Sakhalin", continent: "Asia" },
-          { value: "<+05>-5_8", name: "Asia/Samarkand", continent: "Asia" },
-          { value: "KST-9_1", name: "Asia/Seoul", continent: "Asia" },
-          { value: "CST-8_1", name: "Asia/Shanghai", continent: "Asia" },
-          { value: "<+08>-8_5", name: "Asia/Singapore", continent: "Asia" },
-          { value: "<+11>-11_3", name: "Asia/Srednekolymsk", continent: "Asia" },
-          { value: "CST-8_2", name: "Asia/Taipei", continent: "Asia" },
-          { value: "<+05>-5_9", name: "Asia/Tashkent", continent: "Asia" },
-          { value: "<+04>-4_3", name: "Asia/Tbilisi", continent: "Asia" },
-          { value: "<+0330>-3:30_0", name: "Asia/Tehran", continent: "Asia" },
-          { value: "<+06>-6_5", name: "Asia/Thimphu", continent: "Asia" },
-          { value: "JST-9_0", name: "Asia/Tokyo", continent: "Asia" },
-          { value: "<+07>-7_9", name: "Asia/Tomsk", continent: "Asia" },
-          { value: "<+08>-8_6", name: "Asia/Ulaanbaatar", continent: "Asia" },
-          { value: "<+06>-6_6", name: "Asia/Urumqi", continent: "Asia" },
-          { value: "<+10>-10_1", name: "Asia/Ust-Nera", continent: "Asia" },
-          { value: "<+07>-7_10", name: "Asia/Vientiane", continent: "Asia" },
-          { value: "<+10>-10_2", name: "Asia/Vladivostok", continent: "Asia" },
-          { value: "<+09>-9_3", name: "Asia/Yakutsk", continent: "Asia" },
-          { value: "<+0630>-6:30_0", name: "Asia/Yangon", continent: "Asia" },
-          { value: "<+05>-5_10", name: "Asia/Yekaterinburg", continent: "Asia" },
-          { value: "<+04>-4_4", name: "Asia/Yerevan", continent: "Asia" },
-          { value: "<+01>1<+00>,M3.5.0/0,M10.5.0/1_1", name: "Atlantic/Azores", continent: "Atlantic" },
-          { value: "AST4ADT,M3.2.0,M11.1.0_5", name: "Atlantic/Bermuda", continent: "Atlantic" },
-          { value: "WET0WEST,M3.5.0/1,M10.5.0_0", name: "Atlantic/Canary", continent: "Atlantic" },
-          { value: "<+01>1_0", name: "Atlantic/Cape_Verde", continent: "Atlantic" },
-          { value: "WET0WEST,M3.5.0/1,M10.5.0_1", name: "Atlantic/Faroe", continent: "Atlantic" },
-          { value: "WET0WEST,M3.5.0/1,M10.5.0_2", name: "Atlantic/Madeira", continent: "Atlantic" },
-          { value: "GMT0_14", name: "Atlantic/Reykjavik", continent: "Atlantic" },
-          { value: "<+02>2_3", name: "Atlantic/South_Georgia", continent: "Atlantic" },
-          { value: "GMT0_15", name: "Atlantic/St_Helena", continent: "Atlantic" },
-          { value: "<+03>3_26", name: "Atlantic/Stanley", continent: "Atlantic" },
-          { value: "ACST-9:30ACDT,M10.1.0,M4.1.0/3_0", name: "Australia/Adelaide", continent: "Australia" },
-          { value: "AEST-10_0", name: "Australia/Brisbane", continent: "Australia" },
-          { value: "ACST-9:30ACDT,M10.1.0,M4.1.0/3_1", name: "Australia/Broken_Hill", continent: "Australia" },
-          { value: "AEST-10AEDT,M10.1.0,M4.1.0/3_1", name: "Australia/Currie", continent: "Australia" },
-          { value: "ACST-9:30_0", name: "Australia/Darwin", continent: "Australia" },
-          { value: "<+0845>-8:45_0", name: "Australia/Eucla", continent: "Australia" },
-          { value: "AEST-10AEDT,M10.1.0,M4.1.0/3_2", name: "Australia/Hobart", continent: "Australia" },
-          { value: "AEST-10_1", name: "Australia/Lindeman", continent: "Australia" },
-          { value: "<+1030>-10:30<+11>-11,M10.1.0,M4.1.0_0", name: "Australia/Lord_Howe", continent: "Australia" },
-          { value: "AEST-10AEDT,M10.1.0,M4.1.0/3_3", name: "Australia/Melbourne", continent: "Australia" },
-          { value: "AWST-8_0", name: "Australia/Perth", continent: "Australia" },
-          { value: "AEST-10AEDT,M10.1.0,M4.1.0/3_4", name: "Australia/Sydney", continent: "Australia" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_2", name: "Europe/Amsterdam", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_3", name: "Europe/Andorra", continent: "Europe" },
-          { value: "<+04>-4_5", name: "Europe/Astrakhan", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_2", name: "Europe/Athens", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_4", name: "Europe/Belgrade", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_5", name: "Europe/Berlin", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_6", name: "Europe/Bratislava", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_7", name: "Europe/Brussels", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_3", name: "Europe/Bucharest", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_8", name: "Europe/Budapest", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_9", name: "Europe/Busingen", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0,M10.5.0/3_0", name: "Europe/Chisinau", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_10", name: "Europe/Copenhagen", continent: "Europe" },
-          { value: "IST-1GMT0,M10.5.0,M3.5.0/1_0", name: "Europe/Dublin", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_11", name: "Europe/Gibraltar", continent: "Europe" },
-          { value: "GMT0BST,M3.5.0/1,M10.5.0_0", name: "Europe/Guernsey", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_4", name: "Europe/Helsinki", continent: "Europe" },
-          { value: "GMT0BST,M3.5.0/1,M10.5.0_1", name: "Europe/Isle_of_Man", continent: "Europe" },
-          { value: "<+03>-3_9", name: "Europe/Istanbul", continent: "Europe" },
-          { value: "GMT0BST,M3.5.0/1,M10.5.0_2", name: "Europe/Jersey", continent: "Europe" },
-          { value: "EET-2_2", name: "Europe/Kaliningrad", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_5", name: "Europe/Kiev", continent: "Europe" },
-          { value: "<+03>-3_10", name: "Europe/Kirov", continent: "Europe" },
-          { value: "WET0WEST,M3.5.0/1,M10.5.0_3", name: "Europe/Lisbon", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_12", name: "Europe/Ljubljana", continent: "Europe" },
-          { value: "GMT0BST,M3.5.0/1,M10.5.0_3", name: "Europe/London", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_13", name: "Europe/Luxembourg", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_14", name: "Europe/Madrid", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_15", name: "Europe/Malta", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_6", name: "Europe/Mariehamn", continent: "Europe" },
-          { value: "<+03>-3_11", name: "Europe/Minsk", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_16", name: "Europe/Monaco", continent: "Europe" },
-          { value: "MSK-3_0", name: "Europe/Moscow", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_17", name: "Europe/Oslo", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_18", name: "Europe/Paris", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_19", name: "Europe/Podgorica", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_20", name: "Europe/Prague", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_7", name: "Europe/Riga", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_21", name: "Europe/Rome", continent: "Europe" },
-          { value: "<+04>-4_6", name: "Europe/Samara", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_22", name: "Europe/San_Marino", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_23", name: "Europe/Sarajevo", continent: "Europe" },
-          { value: "<+04>-4_7", name: "Europe/Saratov", continent: "Europe" },
-          { value: "MSK-3_1", name: "Europe/Simferopol", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_24", name: "Europe/Skopje", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_8", name: "Europe/Sofia", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_25", name: "Europe/Stockholm", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_9", name: "Europe/Tallinn", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_26", name: "Europe/Tirane", continent: "Europe" },
-          { value: "<+04>-4_8", name: "Europe/Ulyanovsk", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_10", name: "Europe/Uzhgorod", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_27", name: "Europe/Vaduz", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_28", name: "Europe/Vatican", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_29", name: "Europe/Vienna", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_11", name: "Europe/Vilnius", continent: "Europe" },
-          { value: "<+03>-3_12", name: "Europe/Volgograd", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_30", name: "Europe/Warsaw", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_31", name: "Europe/Zagreb", continent: "Europe" },
-          { value: "EET-2EEST,M3.5.0/3,M10.5.0/4_12", name: "Europe/Zaporozhye", continent: "Europe" },
-          { value: "CET-1CEST,M3.5.0,M10.5.0/3_32", name: "Europe/Zurich", continent: "Europe" },
-          { value: "EAT-3_7", name: "Indian/Antananarivo", continent: "Indian" },
-          { value: "<+06>-6_7", name: "Indian/Chagos", continent: "Indian" },
-          { value: "<+07>-7_11", name: "Indian/Christmas", continent: "Indian" },
-          { value: "<+0630>-6:30_1", name: "Indian/Cocos", continent: "Indian" },
-          { value: "EAT-3_8", name: "Indian/Comoro", continent: "Indian" },
-          { value: "<+05>-5_11", name: "Indian/Kerguelen", continent: "Indian" },
-          { value: "<+04>-4_9", name: "Indian/Mahe", continent: "Indian" },
-          { value: "<+05>-5_12", name: "Indian/Maldives", continent: "Indian" },
-          { value: "<+04>-4_10", name: "Indian/Mauritius", continent: "Indian" },
-          { value: "EAT-3_9", name: "Indian/Mayotte", continent: "Indian" },
-          { value: "<+04>-4_11", name: "Indian/Reunion", continent: "Indian" },
-          { value: "<+13>-13_0", name: "Pacific/Apia", continent: "Pacific" },
-          { value: "NZST-12NZDT,M9.5.0,M4.1.0/3_1", name: "Pacific/Auckland", continent: "Pacific" },
-          { value: "<+11>-11_4", name: "Pacific/Bougainville", continent: "Pacific" },
-          { value: "<+1245>-12:45<+1345>,M9.5.0/2:45,M4.1.0/3:45_0", name: "Pacific/Chatham", continent: "Pacific" },
-          { value: "<+10>-10_3", name: "Pacific/Chuuk", continent: "Pacific" },
-          { value: "<+06>6<+05>,M9.1.6/22,M4.1.6/22_0", name: "Pacific/Easter", continent: "Pacific" },
-          { value: "<+11>-11_5", name: "Pacific/Efate", continent: "Pacific" },
-          { value: "<+13>-13_1", name: "Pacific/Enderbury", continent: "Pacific" },
-          { value: "<+13>-13_2", name: "Pacific/Fakaofo", continent: "Pacific" },
-          { value: "<+12>-12_2", name: "Pacific/Fiji", continent: "Pacific" },
-          { value: "<+12>-12_3", name: "Pacific/Funafuti", continent: "Pacific" },
-          { value: "<+06>6_0", name: "Pacific/Galapagos", continent: "Pacific" },
-          { value: "<+09>-9_4", name: "Pacific/Gambier", continent: "Pacific" },
-          { value: "<+11>-11_6", name: "Pacific/Guadalcanal", continent: "Pacific" },
-          { value: "ChST-10_0", name: "Pacific/Guam", continent: "Pacific" },
-          { value: "HST10_0", name: "Pacific/Honolulu", continent: "Pacific" },
-          { value: "<+14>-14_0", name: "Pacific/Kiritimati", continent: "Pacific" },
-          { value: "<+11>-11_7", name: "Pacific/Kosrae", continent: "Pacific" },
-          { value: "<+12>-12_4", name: "Pacific/Kwajalein", continent: "Pacific" },
-          { value: "<+12>-12_5", name: "Pacific/Majuro", continent: "Pacific" },
-          { value: "<+0930>9:30_0", name: "Pacific/Marquesas", continent: "Pacific" },
-          { value: "SST11_0", name: "Pacific/Midway", continent: "Pacific" },
-          { value: "<+12>-12_6", name: "Pacific/Nauru", continent: "Pacific" },
-          { value: "<+11>-11<+12>,M10.1.0,M4.1.0/3_0", name: "Pacific/Norfolk", continent: "Pacific" },
-          { value: "<+11>-11_8", name: "Pacific/Noumea", continent: "Pacific" },
-          { value: "SST11_1", name: "Pacific/Pago_Pago", continent: "Pacific" },
-          { value: "<+09>-9_5", name: "Pacific/Palau", continent: "Pacific" },
-          { value: "<+08>8_0", name: "Pacific/Pitcairn", continent: "Pacific" },
-          { value: "<+11>-11_9", name: "Pacific/Pohnpei", continent: "Pacific" },
-          { value: "<+10>-10_4", name: "Pacific/Port_Moresby", continent: "Pacific" },
-          { value: "<+10>10_0", name: "Pacific/Rarotonga", continent: "Pacific" },
-          { value: "ChST-10_1", name: "Pacific/Saipan", continent: "Pacific" },
-          { value: "<+10>10_1", name: "Pacific/Tahiti", continent: "Pacific" },
-          { value: "<+12>-12_7", name: "Pacific/Tarawa", continent: "Pacific" },
-          { value: "<+13>-13_3", name: "Pacific/Tongatapu", continent: "Pacific" },
-          { value: "<+12>-12_8", name: "Pacific/Wake", continent: "Pacific" },
-          { value: "<+12>-12_9", name: "Pacific/Wallis", continent: "Pacific" },
-          { value: "GMT0_16", name: "Etc/GMT", continent: "Etc" },
-          { value: "GMT0_17", name: "Etc/GMT+0", continent: "Etc" },
-          { value: "<+01>-1_2", name: "Etc/GMT+1", continent: "Etc" },
-          { value: "<+02>-2_0", name: "Etc/GMT+2", continent: "Etc" },
-          { value: "<+03>-3_13", name: "Etc/GMT+3", continent: "Etc" },
-          { value: "<+04>-4_12", name: "Etc/GMT+4", continent: "Etc" },
-          { value: "<+05>-5_13", name: "Etc/GMT+5", continent: "Etc" },
-          { value: "<+06>-6_8", name: "Etc/GMT+6", continent: "Etc" },
-          { value: "<+07>-7_12", name: "Etc/GMT+7", continent: "Etc" },
-          { value: "<+08>-8_7", name: "Etc/GMT+8", continent: "Etc" },
-          { value: "<+09>-9_6", name: "Etc/GMT+9", continent: "Etc" },
-          { value: "<+10>-10_5", name: "Etc/GMT+10", continent: "Etc" },
-          { value: "<+11>-11_10", name: "Etc/GMT+11", continent: "Etc" },
-          { value: "<+12>-12_10", name: "Etc/GMT+12", continent: "Etc" },
-          { value: "<+13>-13_4", name: "Etc/GMT+13", continent: "Etc" },
-          { value: "<+14>-14_1", name: "Etc/GMT+14", continent: "Etc" },
-          { value: "GMT0_18", name: "Etc/GMT-0", continent: "Etc" },
-          { value: "<+01>1_1", name: "Etc/GMT-1", continent: "Etc" },
-          { value: "<+02>2_4", name: "Etc/GMT-2", continent: "Etc" },
-          { value: "<+03>3_27", name: "Etc/GMT-3", continent: "Etc" },
-          { value: "<+04>4_8", name: "Etc/GMT-4", continent: "Etc" },
-          { value: "<+05>5_5", name: "Etc/GMT-5", continent: "Etc" },
-          { value: "<+06>6_1", name: "Etc/GMT-6", continent: "Etc" },
-          { value: "<+07>7_0", name: "Etc/GMT-7", continent: "Etc" },
-          { value: "<+08>8_1", name: "Etc/GMT-8", continent: "Etc" },
-          { value: "<+09>9_0", name: "Etc/GMT-9", continent: "Etc" },
-          { value: "<+10>10_2", name: "Etc/GMT-10", continent: "Etc" },
-          { value: "<+11>11_0", name: "Etc/GMT-11", continent: "Etc" },
-          { value: "<+12>12_0", name: "Etc/GMT-12", continent: "Etc" },
-          { value: "UTC0_0", name: "Etc/UCT", continent: "Etc" },
-          { value: "UTC0_1", name: "Etc/UTC", continent: "Etc" },
-          { value: "GMT0_19", name: "Etc/Greenwich", continent: "Etc" },
-          { value: "UTC0_2", name: "Etc/Universal", continent: "Etc" },
-          { value: "UTC0_3", name: "Etc/Zulu", continent: "Etc" },
-        ];
-        
-        onMounted(() => {
+        const control = useControl();
+        watch(control.loading, (loading) => {
+          if (!loading) nextTick(() => control.mountPicker('#picker', 260));
         });
-
-        const timezoneGroups = computed(() => {
-          // Group timezones by continent
-          const groups = {};
-          timezoneOptions.forEach(tz => {
-            if (!groups[tz.continent]) {
-              groups[tz.continent] = [];
-            }
-            groups[tz.continent].push(tz);
-          });
-          
-          // Convert to array and sort
-          return Object.keys(groups).sort().map(continent => ({
-            continent,
-            timezones: groups[continent].sort((a, b) => a.name.localeCompare(b.name))
-          }));
-        });
-
-        const isEnglish = computed(() => {
-          if(clockLayout.value && clockLayout.value.includes("OCLOCK")) return true;
-          return false;
-        })
-        
-        const filteredTimezoneGroups = computed(() => {
-          if (!timezoneSearch.value) {
-            return timezoneGroups.value;
-          }
-          
-          const search = timezoneSearch.value.toLowerCase();
-          const filteredGroups = [];
-          
-          timezoneGroups.value.forEach(group => {
-            const matchingTimezones = group.timezones.filter(tz => 
-              tz.name.toLowerCase().includes(search)
-            );
-            
-            if (matchingTimezones.length > 0) {
-              filteredGroups.push({
-                continent: group.continent,
-                timezones: matchingTimezones
-              });
-            }
-          });
-          
-          return filteredGroups;
-        });
-
-        const getTimezoneDisplayName = (value) => {
-          const tz = timezoneOptions.find(option => option.value === value);
-          return tz ? tz.name : value;
-        };
-        
-        const toggleTimezoneDropdown = () => {
-          showTimezoneDropdown.value = !showTimezoneDropdown.value;
-          if (showTimezoneDropdown.value) {
-            // Reset search when opening
-            timezoneSearch.value = '';
-            
-            // Close dropdown when clicking outside
-            setTimeout(() => {
-              document.addEventListener('click', closeTimezoneDropdown);
-            }, 0);
-          }
-        };
-        
-        const closeTimezoneDropdown = (event) => {
-          const dropdown = document.querySelector('.timezone-dropdown');
-          if (dropdown && !dropdown.contains(event.target)) {
-            showTimezoneDropdown.value = false;
-            document.removeEventListener('click', closeTimezoneDropdown);
-          }
-        };
-        
-        const selectTimezone = (value) => {
-          timezone.value = value;
-          showTimezoneDropdown.value = false;
-        };
-        
-        const filterTimezones = () => {
-          // Filtering is handled by the computed property
-        };
-
-        const getSettings = async () => {
-          try {
-            loadingSettings.value = true;
-            const response = await fetch(baseUrl + '/api/settings');
-            const result = await response.json();
-            mode.value = result.mode;
-            clockWidth.value = result.clock_width;
-            clockHeight.value = result.clock_height;
-            clockLayout.value = result.clock_layout;
-            version.value = result.version;
-            fsversion.value = result.fsversion;
-            brightness.value = result.brightness;
-            nightmodeBrightness.value = result.nm_brightness;
-            nm.value = !!result.nm;
-            nm_start.value = result.nm_start_h.toString().padStart(2, '0') + ":" + result.nm_start_m.toString().padStart(2, '0');
-            nm_end.value = result.nm_end_h.toString().padStart(2, '0') + ":" + result.nm_end_m.toString().padStart(2, '0');
-            timezone.value = result.timezone;
-            klokuniek.value = !!result.klokuniek;
-            if (klokuniek.value) document.title = "KlokUniek";
-          } catch (e) {
-            alert('Could not retrieve settings');
-            console.error(e);
-          }
-          loadingSettings.value = false;
-        }
-        const setMode = async (newMode) => {
-          try {
-            loadingSettings.value = true;
-            const response = await fetch(baseUrl + '/api/mode', {
-              method: 'POST',
-              body: newMode
-            })
-            const result = await response.json();
-            mode.value = result;
-          } catch (e) {
-            alert('Could not change mode');
-            console.error(e);
-          }
-          loadingSettings.value = false;
-        }
-
-        const saveSettings = async () => {
-          try {
-            loadingSettings.value = true;
-            const response = await fetch(baseUrl + '/api/settings', {
-              method: 'POST',
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                nm: !!nm.value,
-                nm_start_h: parseInt(nm_start.value.split(":")[0]),
-                nm_start_m: parseInt(nm_start.value.split(":")[1]),
-                nm_end_h: parseInt(nm_end.value.split(":")[0]),
-                nm_end_m: parseInt(nm_end.value.split(":")[1]),
-                timezone: timezone.value,
-              })
-            });
-            const result = await response.json();
-            showSettings.value = false;
-          } catch (e) {
-            alert('Could not save settings');
-            console.error(e);
-          }
-          loadingSettings.value = false;
-        }
-        const getColor = async (type) => {
-          try {
-            loading.value = true;
-            const response = await fetch(baseUrl + '/api/color?type=' + type);
-            const color = '#' + (await response.json()).toString(16).padStart(6, '0');
-            if (!colorPicker) {
-              colorPicker = new window.iro.ColorPicker("#picker", {
-                // Set the size of the color picker
-                width: 300,
-                // Set the initial color to pure red
-                color: color,
-                layout: [
-                  {
-                    component: iro.ui.Wheel,
-                  },
-                  { 
-                    component: window.iro.ui.Slider,
-                    options: {
-                      // can also be 'saturation', 'value', 'red', 'green', 'blue', 'alpha' or 'kelvin'
-                      sliderType: 'value'
-                    }
-                  },
-                ]
-              });
-              colorPicker.on('color:change', throttle(async function (color) {
-                if (!tabChange) {
-                  try {
-                    const response = await fetch(baseUrl + '/api/color?type=' + colorType.value, {
-                      method: 'POST',
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify(color.rgb)
-                    })
-                    const result = await response.json();
-                  } catch (e) {
-                    alert('Could not save color');
-                    console.error(e);
-                  }
-                } else {
-                  tabChange = false;
-                }
-
-              }, 200));
-            } else {
-              tabChange = true;
-              colorPicker.color.set(color);
-            }
-          } catch (e) {
-            console.error(e);
-          }
-          loading.value = false;
-        }
-
-        const saveBrightness = async (nightmode = false) => {
-          try {
-            loadingBrightness.value = true;
-            const response = await fetch(baseUrl + '/api/brightness?type=' + (nightmode ? 'nightmode' : 'global'), {
-              method: 'POST',
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(parseInt(nightmode ? nightmodeBrightness.value : brightness.value))
-            });
-            const result = await response.json();
-          } catch (e) {
-            alert('Could not save brightness');
-            console.error(e);
-          }
-          loadingBrightness.value = false;
-        }
-        watch(colorType, async (newType) => {
-          getColor(newType);
-        })
-        getSettings();
-        onMounted(() => {
-          getColor(colorType.value);
-        })
-        return {
-          colorType,
-          showSettings,
-          klokuniek,
-          nm,
-          nm_start,
-          nm_end,
-          brightness,
-          nightmodeBrightness,
-          loading,
-          loadingSettings,
-          loadingBrightness,
-          saveSettings,
-          saveBrightness,
-          mode,
-          setMode,
-          clockWidth,
-          clockHeight,
-          clockLayout,
-          version,
-          fsversion,
-          timezone,
-          showTimezoneDropdown,
-          timezoneSearch,
-          timezoneGroups,
-          filteredTimezoneGroups,
-          getTimezoneDisplayName,
-          toggleTimezoneDropdown,
-          selectTimezone,
-          filterTimezones,
-          isEnglish
-        }
+        // night mode as saved on the clock (the drawer's switch only counts after "save")
+        const nmSaved = computed(() => control.savedNight.value.nm);
+        return { ...control, nmSaved };
       }
-    }).mount('#app')
+    }).mount('#app');
   </script>
 </body>
 
