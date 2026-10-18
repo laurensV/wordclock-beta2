@@ -120,9 +120,12 @@ void loop() {
     case RAINBOW:
       for (int i = 0; i < pixels->numPixels(); i++) {  // For each pixel in strip...
         int pixelHue = rainbowHue + (i * 65536L / pixels->numPixels());
-        if (matrix->leds[matrix->pixelRow(i)][matrix->pixelCol(i)] != LEDMatrix::TIME &&
-          matrix->leds[matrix->pixelRow(i)][matrix->pixelCol(i)] != LEDMatrix::ICON &&
-          matrix->leds[matrix->pixelRow(i)][matrix->pixelCol(i)] != LEDMatrix::NAME) {
+        uint8_t row = matrix->pixelRow(i);
+        uint8_t col = matrix->pixelCol(i);
+        if (matrix->hasLed(row, col) &&
+          matrix->leds[row][col] != LEDMatrix::TIME &&
+          matrix->leds[row][col] != LEDMatrix::ICON &&
+          matrix->leds[row][col] != LEDMatrix::NAME) {
           pixels->setPixelColor(i, pixels->gamma32(pixels->ColorHSV(pixelHue)));
         }
       }
@@ -189,6 +192,9 @@ void setupPixels(bool showAnimation) {
   pixels->clear();
   if (showAnimation) {
     for (int i = 0; i < (clockWidth * clockHeight); i++) {
+      if (!matrix->hasLed(matrix->pixelRow(i), matrix->pixelCol(i))) {
+        continue;
+      }
       uint16_t hue = (i * 65536) / (clockWidth * clockHeight);
       uint32_t color = Adafruit_NeoPixel::ColorHSV(hue);
       color = pixels->gamma32(color);
@@ -270,7 +276,7 @@ void setNightMode(int timeInMinutes) {
   int nightModeEndTime = (nightModeEndHour * 60 + nightModeEndMin);
   if (nightModeStartTime > nightModeEndTime) {
     // over midnight
-    nightMode = checkNightMode && timeInMinutes >= nightModeStartTime || timeInMinutes < nightModeEndTime;
+    nightMode = checkNightMode && (timeInMinutes >= nightModeStartTime || timeInMinutes < nightModeEndTime);
   } else {
     nightMode = checkNightMode && timeInMinutes >= nightModeStartTime && timeInMinutes < nightModeEndTime;
   }
@@ -316,8 +322,8 @@ bool checkUpdateInterval() {
 }
 
 bool storeColorsInterval() {
-  bool interval = (storeColorName || storeColorTime) && (long)millis() - lastCheckUpdate > PERIOD_STORE_COLORS;
-  if (interval) lastCheckUpdate = millis();
+  bool interval = (storeColorName || storeColorTime || storeColorIcon) && (long)millis() - lastStoreColors > PERIOD_STORE_COLORS;
+  if (interval) lastStoreColors = millis();
   return interval;
 }
 
@@ -347,7 +353,12 @@ void checkWifiDisconnect() {
     if (WiFi.status() != WL_CONNECTED) {
       print("no wifi connection..");
       if (!nightMode) {
-        pixels->setPixelColor(100, pixels->Color(255, 0, 0, 0));
+        // red led in the middle of the clock, or the first led with a letter if that spot has no led
+        uint16_t i = 100;
+        if (!matrix->hasLed(matrix->pixelRow(i), matrix->pixelCol(i))) {
+          for (i = 0; i < pixels->numPixels() - 1 && !matrix->hasLed(matrix->pixelRow(i), matrix->pixelCol(i)); i++);
+        }
+        pixels->setPixelColor(i, pixels->Color(255, 0, 0, 0));
         pixels->show();
       }
     } else if (WiFi.localIP().toString() == "0.0.0.0") {
@@ -365,21 +376,40 @@ void printIP() {
   uint8_t address = WiFi.localIP()[3];
   pauseTimer(&lastReadTime, 10000);
   matrix->clear();
-  matrix->print(FONT_I, 1, 0, LEDMatrix::OTHER);
-  matrix->print(FONT_P, 5, 0, LEDMatrix::OTHER);
-  uint8_t x = 0;
-  // Show first number when it's not 0
-  if (address / 100 != 0) {
-    matrix->print(FONT_NUMBERS[(address / 100)], x, 6, LEDMatrix::OTHER);
-    x += 4;
+
+  // digits of the last part of the IP address, without leading zeros
+  // (for example, show 5 for 005, but 105 for 105)
+  uint8_t digits[3];
+  uint8_t numDigits = 0;
+  if (address >= 100) digits[numDigits++] = address / 100;
+  if (address >= 10) digits[numDigits++] = (address / 10) % 10;
+  digits[numDigits++] = address % 10;
+
+  if (matrix->boxHasLeds(1, 0) && matrix->boxHasLeds(5, 0) &&
+    matrix->boxHasLeds(0, 6) && matrix->boxHasLeds(4, 6) && matrix->boxHasLeds(8, 6)) {
+    // classic layout: "IP" on top, the digits below it
+    matrix->print(FONT_I, 1, 0, LEDMatrix::OTHER);
+    matrix->print(FONT_P, 5, 0, LEDMatrix::OTHER);
+    for (uint8_t i = 0; i < numDigits; i++) {
+      matrix->print(FONT_NUMBERS[digits[i]], i * 4, 6, LEDMatrix::OTHER);
+    }
+  } else {
+    // middle of the clock is not available (e.g. picture in the middle):
+    // "IP" (with a narrow I) in the top-left corner if it fits there, and the
+    // digits one per remaining corner, read from top-left to bottom-right
+    uint8_t x, y;
+    uint8_t corner = 0;
+    if (matrix->ipSlot(&x, &y)) {
+      matrix->print(FONT_I_NARROW, x, y, LEDMatrix::OTHER);
+      matrix->print(FONT_P, x + 2, y, LEDMatrix::OTHER);
+      corner = 1;
+    }
+    for (uint8_t i = 0; i < numDigits; i++, corner++) {
+      if (matrix->cornerSlot((LEDMatrix::CORNER)corner, &x, &y)) {
+        matrix->print(FONT_NUMBERS[digits[i]], x, y, LEDMatrix::OTHER);
+      }
+    }
   }
-  // Show second number when it's not 0
-  // or when first number is not 0 (for example, hide for 005, but show for 105)
-  if (address / 100 != 0 || (address / 10) % 10 != 0) {
-    matrix->print(FONT_NUMBERS[(address / 10) % 10], x, 6, LEDMatrix::OTHER);
-    x += 4;
-  }
-  matrix->print(FONT_NUMBERS[address % 10], x, 6, LEDMatrix::OTHER);
   matrix->draw(true);
 }
 
@@ -412,7 +442,10 @@ void onUpdateProgress(unsigned int progress, unsigned int total) {
     pixels->clear();
     for (int i = 0; i < progress / (total / (clockWidth * clockHeight)); i++) {
       int row = i / clockWidth;
-      pixels->setPixelColor(row % 2 ? row * clockWidth + ((row + 1) * clockWidth - i - 1) : i, pixels->Color(0, 0, 255));
+      int col = i % clockWidth;
+      if (matrix->hasLed(row, col)) {
+        pixels->setPixelColor(matrix->pixelIndex(row, col), pixels->Color(0, 0, 255));
+      }
     }
     pixels->show();
   }
@@ -422,7 +455,9 @@ void onUpdateFinished() {
   if (!nightMode) {
     pixels->clear();
     for (int i = 0; i < (clockWidth * clockHeight); i++) {
-      pixels->setPixelColor(i, pixels->Color(0, 255, 0));
+      if (matrix->hasLed(matrix->pixelRow(i), matrix->pixelCol(i))) {
+        pixels->setPixelColor(i, pixels->Color(0, 255, 0));
+      }
     }
     pixels->show();
   }
@@ -479,10 +514,23 @@ void showName() {
 
 void showDigitalTime(int hours, int minutes) {
   matrix->clear();
-  matrix->print(FONT_NUMBERS[(hours / 10)], 3, 0, LEDMatrix::TIME);
-  matrix->print(FONT_NUMBERS[(hours % 10)], 7, 0, LEDMatrix::TIME);
-  matrix->print(FONT_NUMBERS[(minutes / 10)], 3, 6, LEDMatrix::TIME);
-  matrix->print(FONT_NUMBERS[(minutes % 10)], 7, 6, LEDMatrix::TIME);
+  uint8_t digits[4] = { (uint8_t)(hours / 10), (uint8_t)(hours % 10), (uint8_t)(minutes / 10), (uint8_t)(minutes % 10) };
+  if (matrix->boxHasLeds(3, 0) && matrix->boxHasLeds(7, 0) && matrix->boxHasLeds(3, 6) && matrix->boxHasLeds(7, 6)) {
+    // classic layout: hours on top, minutes below it, in the middle of the clock
+    matrix->print(FONT_NUMBERS[digits[0]], 3, 0, LEDMatrix::TIME);
+    matrix->print(FONT_NUMBERS[digits[1]], 7, 0, LEDMatrix::TIME);
+    matrix->print(FONT_NUMBERS[digits[2]], 3, 6, LEDMatrix::TIME);
+    matrix->print(FONT_NUMBERS[digits[3]], 7, 6, LEDMatrix::TIME);
+  } else {
+    // middle of the clock is not available (e.g. picture in the middle):
+    // one digit per corner, hours on top and minutes at the bottom
+    for (uint8_t i = 0; i < 4; i++) {
+      uint8_t x, y;
+      if (matrix->cornerSlot((LEDMatrix::CORNER)i, &x, &y)) {
+        matrix->print(FONT_NUMBERS[digits[i]], x, y, LEDMatrix::TIME);
+      }
+    }
+  }
   showName();
   matrix->draw(true);
 }

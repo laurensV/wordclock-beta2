@@ -6,182 +6,73 @@
   <title>JouwWoordklok</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="JouwWoordklok Admin Panel">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="/app.css">
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-  <style>
-   [disabled] {
-    pointer-events: none;
-   }
-  </style>
 </head>
 
-<body class="has-background-white-ter" style="min-height:100vh">
-  <div id="app" style="max-width: 500px;" class="mx-auto has-background-white">
-    <section class="section pt-2">
-      <div class="container">
-        <div class="is-flex is-justify-content-space-between is-align-items-center">
-          <img :src="klokuniek ? '/img/klokuniek.webp' : '/img/logo.png'" width="250" />
-          <div>Admin</div>
-        </div>
-        <form @submit.prevent="saveAdminSettings">
-          <div class="is-flex is-justify-content-space-between is-align-items-center py-2">
-            <label for="clockWidth" class="is-flex-grow-1">Clock Width:</label>
-            <input required v-model="clockWidth" type="number" id="clockWidth" name="clockWidth" min="1" max="20">
-          </div>
-          <div class="is-flex is-justify-content-space-between is-align-items-center py-2">
-            <label for="clockHeight" class="is-flex-grow-1">Clock Height:</label>
-            <input required v-model="clockHeight" type="number" id="clockHeight" name="clockHeight" min="1" max="20">
-          </div>
-          <div class="is-flex is-flex-wrap-wrap is-justify-content-space-between is-align-items-center pb-2">
-            <div class="pb-1 pr-1" v-if="clockWidth && clockHeight" v-for="index in (clockWidth*clockHeight)" :key="index" :style="{'width': `calc(100% / ${clockWidth})`}">
-              <input class="has-text-weight-bold" ref="letters" @input="moveToNextField($event.target.value, index-1)" maxlength="1" required :autofocus="index === 1" style="text-align:center; width: 20px; height: 20px; max-width: 20px; max-height: 20px;"  type="text" v-model="clockLayout[index - 1]"  />
-            </div>
-          </div>
-          <div class="is-flex is-justify-content-space-between is-align-items-center py-2">
-            <label for="klokuniek" class="is-flex-grow-1">KlokUniek branding:</label>
-            <input class="checkbox" type="checkbox" id="klokuniek" name="klokuniek" v-model="klokuniek">
-          </div>
-          <div>
-            Firmware Version: v{{version}}<br>
-            Filesystem Version: v{{fsversion}}
-          </div>
-          <div class="field is-grouped mt-2">
-            <p class="control">
-              <a :class="{'is-loading': loadingSettings}" @click="resetSettings" :disabled="loadingSettings ? 'disabled' : null" class="button is-inverted is-danger">
-                Reset Settings
-              </a>
-            </p>
-            <p class="control">
-              <a :class="{'is-loading': loadingSettings}" :disabled="loadingSettings ? 'disabled' : null" @click="resetWifi" class="button is-inverted is-danger">
-                Reset WIFI
-              </a>
-            </p>
-            <p class="control ml-auto">
-              <button :disabled="loadingSettings ? 'disabled' : null" class="button is-info" :class="{'is-loading': loadingSettings}" type="submit">Save Settings</button>
-            </p>
-          </div>
-        </form>
+<body>
+  <div id="app" class="app">
+    <div class="hdr">
+      <img class="logo" :src="klokuniek ? '/img/klokuniek.webp' : '/img/logo.png'" alt="">
+      <b>Admin</b>
+    </div>
+    <div class="rainbow"></div>
+
+    <!-- layout editor on the clock face, with a preview of what the clock shows -->
+    <div class="widget">
+      <clock-face :layout="layoutString" :width="clockWidth" :height="clockHeight" :lit="previewLeds" @edit="(i, v) => v !== undefined && setCell(i, v)"></clock-face>
+      <div class="seg">
+        <div :class="{on: preview === 'edit'}" @click="preview = 'edit'">Edit</div>
+        <div :class="{on: preview === 'words'}" @click="preview = 'words'">Words</div>
+        <div :class="{on: preview === 'digital'}" @click="preview = 'digital'">Digital</div>
+        <div :class="{on: preview === 'ip'}" @click="preview = 'ip'">IP</div>
       </div>
-    </section>
+      <template v-if="preview === 'words' || preview === 'digital'">
+        <div class="row"><span>Time</span><span><label class="live"><input type="checkbox" v-model="live"> now</label> <input type="time" v-model="previewTime" @input="live = false"></span></div>
+        <div class="help" v-if="previewText" style="margin-top:0">{{ previewText }}</div>
+        <div class="warn" v-if="previewMissing.length">Cannot be shown: {{ previewMissing.join(', ') }}</div>
+      </template>
+      <div class="row" v-if="preview === 'ip'"><span>Last part of the IP address</span><input type="number" min="0" max="255" v-model.number="previewIp"></div>
+      <p class="help" v-if="preview === 'edit'">Tap a letter to change it; typing moves on to the next cell. Empty cells have no letter, for example behind a picture: those leds are never lit and the digital time and the IP address then use the four corners.<span v-if="gaps"> Currently {{ gaps }} empty cells.</span> Type <code>*</code> for a led behind a name or picture and <code>&amp;</code> for a led behind an icon; they get their own color on the control page.</p>
+      <div class="legend" v-if="preview === 'edit'"><span class="l-letter">letter</span><span class="l-empty">empty, never lit</span><span class="l-name">name/picture (*)</span><span class="l-icon">icon (&amp;)</span></div>
+    </div>
+
+    <!-- what the layout as edited (not yet saved) cannot show -->
+    <div class="card">
+      <h3>Layout check</h3>
+      <div class="ok" v-if="!problems.length">All times, the digital time and the IP address can be shown ✓</div>
+      <div v-for="p in problems" :class="p.info ? 'note' : 'warn'"><b>{{ p.what }}:</b> {{ p.text }}</div>
+    </div>
+
+    <form class="card" @submit.prevent="save">
+      <h3>Layout</h3>
+      <div class="row"><span>Width × height</span><span><input type="number" min="1" max="20" required v-model.number="clockWidth"> × <input type="number" min="1" max="20" required v-model.number="clockHeight"></span></div>
+      <details>
+        <summary>Edit as text (one row per line, <code>.</code> = empty cell)</summary>
+        <textarea class="layout" rows="14" v-model="layoutText" @change="fromText(layoutText)"></textarea>
+      </details>
+      <div class="row" style="margin-top:8px"><span>KlokUniek branding</span><input type="checkbox" class="switch" v-model="klokuniek"></div>
+      <button class="btn" type="submit" :disabled="loading">Save</button>
+      <div class="ok" v-if="saved">Saved ✓</div>
+    </form>
+
+    <div class="card">
+      <h3>Reset</h3>
+      <button type="button" class="btn danger" @click="resetWifi">Reset WiFi</button>
+      <button type="button" class="btn danger" @click="resetSettings">Reset all settings</button>
+    </div>
+
+    <div class="ver">Firmware v{{ version }} · Filesystem v{{ fsversion }}</div>
   </div>
+
+  <script src="/app.js"></script>
   <script>
-    const { createApp, ref, onMounted, watch, nextTick } = Vue;
-   
-    const baseUrl = '';
-
     createApp({
+      components: { ClockFace },
       setup() {
-        const loadingSettings = ref(false);
-        const clockWidth = ref();
-        const clockHeight = ref();
-        const clockLayout = ref([]);
-        const klokuniek = ref(false);
-        const version = ref();
-        const fsversion = ref();
-        const letters = ref([])
-        const getSettings = async () => {
-          try {
-            loadingSettings.value = true;
-            const response = await fetch(baseUrl + '/api/settings');
-            const result = await response.json();
-            clockWidth.value = result.clock_width;
-            clockHeight.value = result.clock_height;
-            if (clockWidth.value === 1) clockWidth.value = 13;
-            if (clockHeight.value === 1) clockHeight.value = 13;
-            clockLayout.value = result.clock_layout.split("");
-            klokuniek.value = !!result.klokuniek;
-            if (klokuniek.value) document.title = "KlokUniek";
-            version.value = result.version;
-            fsversion.value = result.fsversion;
-            await nextTick();
-            if (letters.value[0]) {
-              letters.value[0].focus()
-              letters.value[0].select()
-            }
-          } catch (e) {
-            alert('Could not retrieve settings');
-            console.error(e);
-          }
-          loadingSettings.value = false;
-        }
-        
-        const moveToNextField = (value, index) => {
-          const nextIndex = index + 1
-          if (nextIndex < clockWidth.value*clockHeight.value && value) {
-            letters.value[nextIndex].focus()
-            letters.value[nextIndex].select()
-          }
-        }
-
-        const saveAdminSettings = async () => {
-          try {
-            loadingSettings.value = true;
-            const response = await fetch(baseUrl + '/api/admin/settings', {
-              method: 'POST',
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                clock_width: parseInt(clockWidth.value),
-                clock_height: parseInt(clockHeight.value),
-                clock_layout: clockLayout.value.slice(0, clockWidth.value*clockHeight.value).join(""),
-                klokuniek: klokuniek.value
-              })
-            });
-            const result = await response.json();
-          } catch (e) {
-            alert('Could not save settings');
-            console.error(e);
-          }
-          loadingSettings.value = false;
-        }
-
-        const resetWifi = async () => {
-          try {
-            loadingSettings.value = true;
-            if (confirm("Are you sure you want to reset your WIFI settings?")) {
-              const response = await fetch(baseUrl + '/api/admin/reset-wifi');
-              const result = await response.json();
-              alert('Restarting wordclock..');
-            }
-          } catch (e) {
-            alert('Could not reset wifi');
-            console.error(e);
-          }
-          loadingSettings.value = false;
-        }
-        const resetSettings = async () => {
-          try {
-            loadingSettings.value = true;
-            if (confirm("Are you sure you want to reset all settings (including clock layout)?")) {
-              const response = await fetch(baseUrl + '/api/admin/reset-settings');
-              const result = await response.json();
-              alert('Restarting wordclock..');
-            }
-          } catch (e) {
-            alert('Could not reset settings');
-            console.error(e);
-          }
-          loadingSettings.value = false;
-        }
-        
-        getSettings();
-        return {
-          loadingSettings,
-          saveAdminSettings,
-          resetWifi,
-          resetSettings,
-          clockWidth,
-          clockHeight,
-          clockLayout,
-          klokuniek,
-          version,
-          fsversion,
-          moveToNextField,
-          letters
-        }
+        return { ...useAdmin() };
       }
-    }).mount('#app')
+    }).mount('#app');
   </script>
 </body>
 
